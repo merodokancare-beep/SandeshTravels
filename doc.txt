@@ -1,0 +1,15 @@
+now i realized the actual requirement where a travels owner have around 20 vehichle he 
+used for travel business and nowadays the vechile he have is unmanagible, which car is free today
+or which is on work given to which tourist, for how long and what is the current package of same 
+tousist attached to the vehicle 
+1. tourist come to his place or contact him through phone or any means
+2. travel book the enquiry
+3. provide him the quotation vehicle charge(Itenery included as per the tourist tourist plan
+or no of days he can spend)
+4. The travels owner should able to generate quotation within few minutes by using this web application
+and send this to the tourist through whatsapp, upon conformation the vehiche will be asigned
+and journey starts
+5. if tourist want to visit North the travel owner should able to generate from selection
+how will you suggest to handle all these thing shamelessly 
+
+
