@@ -65,11 +65,13 @@ export default function ItineraryBuilder({ params }) {
   const [whatsappLoading, setWhatsappLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isSimulated, setIsSimulated] = useState(false);
 
   const handleSendWhatsApp = async () => {
     setWhatsappLoading(true);
     setError('');
     setSuccess('');
+    setIsSimulated(false);
     try {
       const res = await fetch('/api/admin/whatsapp', {
         method: 'POST',
@@ -79,6 +81,7 @@ export default function ItineraryBuilder({ params }) {
       const data = await res.json();
       if (res.ok) {
         setSuccess(data.message || 'WhatsApp message sent directly to traveller!');
+        setIsSimulated(!!data.simulated);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         setError(data.error || 'Failed to dispatch WhatsApp message.');
@@ -446,7 +449,7 @@ export default function ItineraryBuilder({ params }) {
         </div>
         <div>
           {itineraryId && (
-            <div style={{ display: 'flex', gap: '1rem' }}>
+            <div style={{ display: 'flex', gap: '0.75rem' }}>
               <a 
                 href={`/itinerary/${itineraryId}`} 
                 target="_blank" 
@@ -454,6 +457,16 @@ export default function ItineraryBuilder({ params }) {
                 className="btn btn-secondary"
               >
                 <i className="fa-solid fa-eye" style={{ color: 'var(--primary)' }}></i> Preview Plan
+              </a>
+              <a 
+                href={getWhatsAppLink()}
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="btn btn-secondary"
+                style={{ borderColor: '#25D366', color: '#25D366', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+                title="Open WhatsApp chat with traveler directly from your browser"
+              >
+                <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
               </a>
               {lead && (lead.status === 'converted' || lead.status === 'completed') && days.some(d => d.driverId) ? (
                 <button 
@@ -493,9 +506,22 @@ export default function ItineraryBuilder({ params }) {
         )}
 
         {success && (
-          <div className="success-message" style={{ marginBottom: '1.5rem' }}>
-            <i className="fa-solid fa-circle-check" style={{ marginRight: '0.5rem' }}></i>
-            {success}
+          <div className="success-message" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <i className="fa-solid fa-circle-check" style={{ marginRight: '0.5rem', color: '#10B981' }}></i>
+              <span>{success}</span>
+            </div>
+            {isSimulated && (
+              <a
+                href={getWhatsAppLink()}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-primary"
+                style={{ background: '#25D366', border: 'none', color: '#fff', fontSize: '0.85rem', fontWeight: '600', padding: '0.5rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: '4px', textDecoration: 'none' }}
+              >
+                <i className="fa-brands fa-whatsapp fa-lg"></i> Open WhatsApp Web (Manual Send)
+              </a>
+            )}
           </div>
         )}
 
