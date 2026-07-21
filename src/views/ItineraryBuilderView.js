@@ -63,12 +63,16 @@ export default function ItineraryBuilder({ params }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [whatsappLoading, setWhatsappLoading] = useState(false);
+  const [smsLoading, setSmsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSimulated, setIsSimulated] = useState(false);
 
-  const handleSendWhatsApp = async () => {
-    setWhatsappLoading(true);
+  const handleSendNotification = async (channel = 'whatsapp') => {
+    const isSms = channel === 'sms';
+    if (isSms) setSmsLoading(true);
+    else setWhatsappLoading(true);
+    
     setError('');
     setSuccess('');
     setIsSimulated(false);
@@ -76,22 +80,23 @@ export default function ItineraryBuilder({ params }) {
       const res = await fetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, itineraryId })
+        body: JSON.stringify({ leadId, itineraryId, channel })
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess(data.message || 'WhatsApp message sent directly to traveller!');
+        setSuccess(data.message || `${isSms ? 'SMS' : 'WhatsApp'} message sent directly to traveller!`);
         setIsSimulated(!!data.simulated);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        setError(data.error || 'Failed to dispatch WhatsApp message.');
+        setError(data.error || `Failed to dispatch ${isSms ? 'SMS' : 'WhatsApp'} message.`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      setError('Network error sending WhatsApp message.');
+      setError(`Network error sending ${isSms ? 'SMS' : 'WhatsApp'} message.`);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
-      setWhatsappLoading(false);
+      if (isSms) setSmsLoading(false);
+      else setWhatsappLoading(false);
     }
   };
 
@@ -469,25 +474,43 @@ export default function ItineraryBuilder({ params }) {
                 <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
               </a>
               {lead && (lead.status === 'converted' || lead.status === 'completed') && days.some(d => d.driverId) ? (
-                <button 
-                  onClick={handleSendWhatsApp}
-                  disabled={whatsappLoading}
-                  className="btn btn-primary"
-                  style={{ background: '#25D366', border: 'none', fontWeight: '700', padding: '0.5rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 0 12px rgba(37,211,102,0.4)' }}
-                  id="whatsapp-dispatch-btn"
-                >
-                  <i className="fa-brands fa-whatsapp fa-lg"></i> {whatsappLoading ? 'Sending...' : 'Send Driver & Vehicle Details'}
-                </button>
+                <>
+                  <button 
+                    onClick={() => handleSendNotification('whatsapp')}
+                    disabled={whatsappLoading || smsLoading}
+                    className="btn btn-primary"
+                    style={{ background: '#25D366', border: 'none', fontWeight: '700', padding: '0.5rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 0 12px rgba(37,211,102,0.4)' }}
+                  >
+                    <i className="fa-brands fa-whatsapp fa-lg"></i> {whatsappLoading ? 'Sending...' : 'Send Details via WhatsApp'}
+                  </button>
+                  <button 
+                    onClick={() => handleSendNotification('sms')}
+                    disabled={whatsappLoading || smsLoading}
+                    className="btn btn-primary"
+                    style={{ background: '#0070f3', border: 'none', fontWeight: '700', padding: '0.5rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', boxShadow: '0 0 12px rgba(0,112,243,0.4)' }}
+                  >
+                    <i className="fa-solid fa-envelope"></i> {smsLoading ? 'Sending...' : 'Send Details via SMS'}
+                  </button>
+                </>
               ) : (
-                <button 
-                  onClick={handleSendWhatsApp}
-                  disabled={whatsappLoading}
-                  className="btn btn-primary"
-                  style={{ background: '#25D366', boxShadow: 'none' }}
-                  id="whatsapp-dispatch-btn"
-                >
-                  <i className="fa-brands fa-whatsapp"></i> {whatsappLoading ? 'Sending...' : 'Send to Traveler'}
-                </button>
+                <>
+                  <button 
+                    onClick={() => handleSendNotification('whatsapp')}
+                    disabled={whatsappLoading || smsLoading}
+                    className="btn btn-primary"
+                    style={{ background: '#25D366', boxShadow: 'none' }}
+                  >
+                    <i className="fa-brands fa-whatsapp"></i> {whatsappLoading ? 'Sending...' : 'Send via WhatsApp'}
+                  </button>
+                  <button 
+                    onClick={() => handleSendNotification('sms')}
+                    disabled={whatsappLoading || smsLoading}
+                    className="btn btn-primary"
+                    style={{ background: '#0070f3', boxShadow: 'none' }}
+                  >
+                    <i className="fa-solid fa-envelope"></i> {smsLoading ? 'Sending...' : 'Send via SMS'}
+                  </button>
+                </>
               )}
             </div>
           )}

@@ -3,6 +3,7 @@ import { getAdminSession } from '@/lib/auth';
 import { LeadModel } from '@/models/Lead';
 import { ItineraryModel } from '@/models/Itinerary';
 import { sendWhatsAppMessage } from '@/lib/whatsapp';
+import { sendSMS } from '@/lib/sms';
 
 export class WhatsAppController {
   static async sendItineraryNotification(request) {
@@ -15,7 +16,7 @@ export class WhatsAppController {
         );
       }
 
-      const { leadId, itineraryId } = await request.json();
+      const { leadId, itineraryId, channel = 'whatsapp' } = await request.json();
 
       if (!leadId || !itineraryId) {
         return NextResponse.json(
@@ -72,19 +73,22 @@ export class WhatsAppController {
         message = `Hi ${lead.client_name}, this is VaniTravels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
       }
 
-      const result = await sendWhatsAppMessage(lead.client_phone, message);
+      const useSMS = channel === 'sms';
+      const result = useSMS 
+        ? await sendSMS(lead.client_phone, message)
+        : await sendWhatsAppMessage(lead.client_phone, message);
 
       if (result.success) {
         return NextResponse.json({
           success: true,
           simulated: result.simulated || false,
           message: result.simulated
-            ? 'WhatsApp dispatch simulated successfully. Credentials not configured in .env.local.'
-            : 'WhatsApp message sent directly to traveller.'
+            ? `${useSMS ? 'SMS' : 'WhatsApp'} dispatch simulated successfully. Credentials not configured in .env.local.`
+            : `${useSMS ? 'SMS' : 'WhatsApp'} message sent directly to traveller.`
         });
       } else {
         return NextResponse.json(
-          { error: result.error || 'Failed to dispatch message.' },
+          { error: result.error || `Failed to dispatch ${useSMS ? 'SMS' : 'WhatsApp'} message.` },
           { status: 500 }
         );
       }

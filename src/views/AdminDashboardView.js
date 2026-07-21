@@ -284,7 +284,7 @@ export default function AdminDashboard() {
     }));
   };
 
-  const handleTriggerBackgroundWhatsApp = async (leadId, itineraryId) => {
+  const handleTriggerBackgroundWhatsApp = async (leadId, itineraryId, channel = 'whatsapp') => {
     setError('');
     setSuccess('');
     setActionLoading(true);
@@ -292,25 +292,25 @@ export default function AdminDashboard() {
       const res = await fetch('/api/admin/whatsapp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ leadId, itineraryId })
+        body: JSON.stringify({ leadId, itineraryId, channel })
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess(data.message || 'WhatsApp message sent directly to traveler!');
+        setSuccess(data.message || `${channel === 'sms' ? 'SMS' : 'WhatsApp'} message sent directly to traveler!`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
-        setError(data.error || 'Failed to dispatch WhatsApp message.');
+        setError(data.error || `Failed to dispatch ${channel === 'sms' ? 'SMS' : 'WhatsApp'} message.`);
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
-      setError('Network error triggering WhatsApp notification.');
+      setError(`Network error triggering ${channel === 'sms' ? 'SMS' : 'WhatsApp'} notification.`);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleSaveFleet = async (itinId, lead, itinerary, days) => {
+  const handleSaveFleet = async (itinId, lead, itinerary, days, channel = 'whatsapp') => {
     setError('');
     setSuccess('');
     setActionLoading(true);
@@ -393,8 +393,8 @@ export default function AdminDashboard() {
         setSuccess(`Fleet successfully assigned to the itinerary for "${lead.client_name}".`);
         await fetchDashboardData();
         
-        // Trigger background WhatsApp notification
-        await handleTriggerBackgroundWhatsApp(lead.id, itinId);
+        // Trigger background notification
+        await handleTriggerBackgroundWhatsApp(lead.id, itinId, channel);
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to save fleet assignment.');
@@ -1768,14 +1768,24 @@ export default function AdminDashboard() {
                                 })}
                               </div>
 
-                              <button 
-                                className="btn btn-primary"
-                                style={{ width: '100%', background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))', padding: '0.6rem' }}
-                                onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days)}
-                                disabled={actionLoading}
-                              >
-                                <i className="fa-brands fa-whatsapp"></i> Confirm Assignment & Send Driver Info
-                              </button>
+                              <div style={{ display: 'flex', gap: '0.75rem' }}>
+                                <button 
+                                  className="btn btn-primary"
+                                  style={{ flex: 1, background: '#25D366', border: 'none', padding: '0.6rem', fontWeight: '600', fontSize: '0.85rem' }}
+                                  onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days, 'whatsapp')}
+                                  disabled={actionLoading}
+                                >
+                                  <i className="fa-brands fa-whatsapp"></i> Send via WhatsApp
+                                </button>
+                                <button 
+                                  className="btn btn-primary"
+                                  style={{ flex: 1, background: '#0070f3', border: 'none', padding: '0.6rem', fontWeight: '600', fontSize: '0.85rem' }}
+                                  onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days, 'sms')}
+                                  disabled={actionLoading}
+                                >
+                                  <i className="fa-solid fa-envelope"></i> Send via SMS
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -1857,24 +1867,32 @@ export default function AdminDashboard() {
                                 })}
                               </div>
 
-                              <div style={{ display: 'flex', gap: '1rem' }}>
-                                <button 
-                                  className="btn btn-secondary"
-                                  style={{ flexGrow: 1, padding: '0.5rem' }}
-                                  onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days)}
-                                  disabled={actionLoading}
-                                >
-                                  <i className="fa-solid fa-floppy-disk"></i> Update Assignment
-                                </button>
-                                <button 
-                                   onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id)}
-                                   className="btn btn-primary"
-                                   style={{ background: '#25D366', border: 'none', padding: '0.5rem 1.5rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center' }}
+                               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
+                                 <button 
+                                   className="btn btn-secondary"
+                                   style={{ flexGrow: 1, padding: '0.5rem', fontSize: '0.8rem' }}
+                                   onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days)}
                                    disabled={actionLoading}
                                  >
-                                   <i className="fa-brands fa-whatsapp fa-lg"></i> Resend Driver Info
+                                   <i className="fa-solid fa-floppy-disk"></i> Update
                                  </button>
-                              </div>
+                                 <button 
+                                    onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id, 'whatsapp')}
+                                    className="btn btn-primary"
+                                    style={{ background: '#25D366', border: 'none', padding: '0.5rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center', fontSize: '0.8rem', flexGrow: 1 }}
+                                    disabled={actionLoading}
+                                  >
+                                    <i className="fa-brands fa-whatsapp"></i> Resend WhatsApp
+                                  </button>
+                                  <button 
+                                    onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id, 'sms')}
+                                    className="btn btn-primary"
+                                    style={{ background: '#0070f3', border: 'none', padding: '0.5rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', justifyContent: 'center', fontSize: '0.8rem', flexGrow: 1 }}
+                                    disabled={actionLoading}
+                                  >
+                                    <i className="fa-solid fa-envelope"></i> Resend SMS
+                                  </button>
+                               </div>
                             </div>
                           );
                         })}
