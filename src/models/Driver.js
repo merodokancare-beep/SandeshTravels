@@ -23,6 +23,35 @@ export class DriverModel {
     return res.rows[0];
   }
 
+  static async getByVehicleNumber(vehicleNumber, client = null) {
+    if (!vehicleNumber) return null;
+    const q = client ? client.query.bind(client) : query;
+    const res = await q(
+      `SELECT * FROM drivers_registry 
+       WHERE UPPER(REPLACE(vehicle_number, ' ', '')) = UPPER(REPLACE($1, ' ', ''))`,
+      [vehicleNumber]
+    );
+    return res.rows[0] || null;
+  }
+
+  static async update(id, { driverName, driverPhone, vehicleNumber, vehicleModel }, client = null) {
+    const q = client ? client.query.bind(client) : query;
+    const res = await q(
+      `UPDATE drivers_registry 
+       SET driver_name = $1, driver_phone = $2, vehicle_number = $3, vehicle_model = $4
+       WHERE id = $5
+       RETURNING *`,
+      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, id]
+    );
+    return res.rows[0] || null;
+  }
+
+  static async delete(id, client = null) {
+    const q = client ? client.query.bind(client) : query;
+    await q('DELETE FROM drivers_registry WHERE id = $1', [id]);
+    return true;
+  }
+
   static async getDriverBookings() {
     const res = await query(`
       SELECT 

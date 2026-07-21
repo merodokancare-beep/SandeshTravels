@@ -45,6 +45,7 @@ export default function AdminDashboard() {
   const [driverPhone, setDriverPhone] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
+  const [editingDriver, setEditingDriver] = useState(null);
 
   // Book Enquiry Modal states
   const [showBookModal, setShowBookModal] = useState(false);
@@ -478,30 +479,82 @@ export default function AdminDashboard() {
     setSuccess('');
     setActionLoading(true);
     try {
-      const res = await fetch('/api/admin/drivers', {
-        method: 'POST',
+      const url = '/api/admin/drivers';
+      const method = editingDriver ? 'PUT' : 'POST';
+      const body = {
+        driverName,
+        driverPhone,
+        vehicleNumber,
+        vehicleModel
+      };
+      if (editingDriver) {
+        body.id = editingDriver.id;
+      }
+
+      const res = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          driverName, 
-          driverPhone, 
-          vehicleNumber, 
-          vehicleModel 
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess(`Driver "${driverName}" registered in registry.`);
+        setSuccess(editingDriver ? `Driver "${driverName}" updated successfully.` : `Driver "${driverName}" registered in registry.`);
         setDriverName('');
         setDriverPhone('');
         setVehicleNumber('');
         setVehicleModel('');
+        setEditingDriver(null);
         fetchDashboardData();
       } else {
-        setError(data.error || 'Failed to register driver.');
+        setError(data.error || `Failed to ${editingDriver ? 'update' : 'register'} driver.`);
       }
     } catch (err) {
       console.error(err);
-      setError('Connection failure during registration.');
+      setError(`Connection failure during ${editingDriver ? 'updating' : 'registration'}.`);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditDriverClick = (d) => {
+    setEditingDriver(d);
+    setDriverName(d.driver_name || '');
+    setDriverPhone(d.driver_phone || '');
+    setVehicleNumber(d.vehicle_number || '');
+    setVehicleModel(d.vehicle_model || '');
+    const driverForm = document.getElementById('driver-form-section');
+    if (driverForm) {
+      driverForm.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
+  const handleCancelDriverEdit = () => {
+    setEditingDriver(null);
+    setDriverName('');
+    setDriverPhone('');
+    setVehicleNumber('');
+    setVehicleModel('');
+  };
+
+  const handleDeleteDriver = async (id, name) => {
+    if (!window.confirm(`Are you sure you want to delete driver "${name}"?`)) return;
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/drivers?id=${id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`Driver "${name}" deleted successfully.`);
+        fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to delete driver.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure during deletion.');
     } finally {
       setActionLoading(false);
     }
@@ -1927,11 +1980,11 @@ export default function AdminDashboard() {
 
         {activeTab === 'drivers' && (
           <div className="grid-2 animate-fade-in">
-            {/* Add Driver */}
-            <section className="glass-card">
+            {/* Add/Edit Driver */}
+            <section id="driver-form-section" className="glass-card">
               <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem' }}>
-                <i className="fa-solid fa-circle-plus" style={{ color: 'var(--secondary)', marginRight: '0.5rem' }}></i>
-                Register Transport Driver
+                <i className={editingDriver ? "fa-solid fa-user-pen" : "fa-solid fa-circle-plus"} style={{ color: editingDriver ? 'var(--accent-teal)' : 'var(--secondary)', marginRight: '0.5rem' }}></i>
+                {editingDriver ? "Edit Registered Driver" : "Register Transport Driver"}
               </h2>
               <form onSubmit={handleDriverSubmit}>
                 <div className="form-group">
@@ -1982,14 +2035,26 @@ export default function AdminDashboard() {
                     />
                   </div>
                 </div>
-                <button 
-                  type="submit" 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', marginTop: '1rem', background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
-                  disabled={actionLoading}
-                >
-                  Register Driver & Vehicle
-                </button>
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+                  {editingDriver && (
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      style={{ flex: 1 }}
+                      onClick={handleCancelDriverEdit}
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button 
+                    type="submit" 
+                    className="btn btn-primary" 
+                    style={{ flex: editingDriver ? 2 : 1, background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
+                    disabled={actionLoading}
+                  >
+                    {editingDriver ? "Save Changes" : "Register Driver & Vehicle"}
+                  </button>
+                </div>
               </form>
             </section>
 
@@ -2011,6 +2076,7 @@ export default function AdminDashboard() {
                       <tr>
                         <th>Driver Details</th>
                         <th>Vehicle Info</th>
+                        <th style={{ textAlign: 'center', width: '90px' }}>Actions</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2023,6 +2089,26 @@ export default function AdminDashboard() {
                           <td>
                             <div>{d.vehicle_model || 'N/A'}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+                              <button 
+                                className="btn btn-sm btn-secondary" 
+                                style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }} 
+                                title="Edit"
+                                onClick={() => handleEditDriverClick(d)}
+                              >
+                                <i className="fa-solid fa-pencil" style={{ color: 'var(--accent-teal)' }}></i>
+                              </button>
+                              <button 
+                                className="btn btn-sm btn-secondary" 
+                                style={{ padding: '0.2rem 0.4rem', fontSize: '0.75rem' }} 
+                                title="Delete"
+                                onClick={() => handleDeleteDriver(d.id, d.driver_name)}
+                              >
+                                <i className="fa-solid fa-trash" style={{ color: 'var(--accent-orange)' }}></i>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
