@@ -82,7 +82,6 @@ export class WhatsAppController {
         }
       }
 
-      const useSMS = channel === 'sms';
       const result = useSMS 
         ? await sendSMS(lead.client_phone, message)
         : await sendWhatsAppMessage(lead.client_phone, message);
