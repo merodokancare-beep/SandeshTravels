@@ -152,7 +152,8 @@ export async function initDb() {
     // Safe Alterations for existing schema
     await client.query(`
       ALTER TABLE leads 
-      ADD COLUMN IF NOT EXISTS start_date DATE;
+      ADD COLUMN IF NOT EXISTS start_date DATE,
+      ADD COLUMN IF NOT EXISTS converted_at DATE;
     `);
 
     // 8. Itinerary Preset Templates

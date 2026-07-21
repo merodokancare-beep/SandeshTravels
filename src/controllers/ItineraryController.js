@@ -190,7 +190,7 @@ export class ItineraryController {
         );
       }
 
-      const { itineraryId, assignments } = await request.json();
+      const { itineraryId, assignments, startDate } = await request.json();
 
       if (!itineraryId || !assignments || !Array.isArray(assignments)) {
         return NextResponse.json(
@@ -200,6 +200,33 @@ export class ItineraryController {
       }
 
       await client.query('BEGIN');
+
+      // Update start_date in leads if provided
+      if (startDate) {
+        const itinerary = await ItineraryModel.getById(parseInt(itineraryId, 10), client);
+        if (itinerary) {
+          const lead = await LeadModel.getById(itinerary.lead_id, client);
+          if (lead) {
+            // Validation: Start date should be greater than or equal to converted/created date
+            const convertedLimit = lead.converted_at || lead.created_at;
+            const limitDate = new Date(convertedLimit);
+            limitDate.setHours(0, 0, 0, 0);
+
+            const selectedDate = new Date(startDate);
+            selectedDate.setHours(0, 0, 0, 0);
+
+            if (selectedDate < limitDate) {
+              const limitStr = limitDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              await client.query('ROLLBACK');
+              return NextResponse.json(
+                { error: `Validation Error: Start Date cannot be earlier than the converted/created date (${limitStr}).` },
+                { status: 400 }
+              );
+            }
+          }
+          await LeadModel.update(itinerary.lead_id, { startDate }, client);
+        }
+      }
 
       // Update each day's driver_id
       for (const item of assignments) {

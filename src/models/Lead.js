@@ -44,17 +44,19 @@ export class LeadModel {
 
     let res;
     if (status !== undefined && startDate !== undefined) {
+      const setConvertedSql = status === 'converted' ? ', converted_at = CURRENT_DATE' : '';
       res = await q(
         `UPDATE leads 
-         SET status = $1, start_date = $2 
+         SET status = $1, start_date = $2 ${setConvertedSql}
          WHERE id = $3 
          RETURNING *`,
         [status, startDate || null, id]
       );
     } else if (status !== undefined) {
+      const setConvertedSql = status === 'converted' ? ', converted_at = CURRENT_DATE' : '';
       res = await q(
         `UPDATE leads 
-         SET status = $1 
+         SET status = $1 ${setConvertedSql}
          WHERE id = $2 
          RETURNING *`,
         [status, id]

@@ -22,6 +22,7 @@ export default function AdminDashboard() {
   const [partners, setPartners] = useState([]);
   const [journeys, setJourneys] = useState([]);
   const [fleetAssignments, setFleetAssignments] = useState({});
+  const [fleetStartDates, setFleetStartDates] = useState({});
   const [calendarStartDate, setCalendarStartDate] = useState(getTodayDateString());
   const [bookModalTemplateRegion, setBookModalTemplateRegion] = useState('All');
   const [activeTab, setActiveTab] = useState('leads'); // 'leads', 'fleet', 'hotels', 'drivers'
@@ -313,6 +314,30 @@ export default function AdminDashboard() {
     setSuccess('');
     setActionLoading(true);
 
+    const selectedStartDate = fleetStartDates[itinId] !== undefined
+      ? fleetStartDates[itinId]
+      : (lead.start_date ? String(lead.start_date).substring(0, 10) : '');
+
+    // Frontend validation: Start date must be greater than or equal to converted_at / created_at date
+    if (selectedStartDate) {
+      const limitDateStr = lead.converted_at || lead.created_at;
+      if (limitDateStr) {
+        const limitDate = new Date(limitDateStr);
+        limitDate.setHours(0, 0, 0, 0);
+
+        const selDate = new Date(selectedStartDate);
+        selDate.setHours(0, 0, 0, 0);
+
+        if (selDate < limitDate) {
+          const limitFormatted = limitDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          setError(`Validation Error: Start Date cannot be earlier than the converted/created date (${limitFormatted}).`);
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+          setActionLoading(false);
+          return;
+        }
+      }
+    }
+
     const selections = fleetAssignments[itinId] || {};
     
     // Prepare assignments array for API
@@ -334,7 +359,7 @@ export default function AdminDashboard() {
       if (item.driverId) {
         const d = fleet.find(drv => String(drv.id) === String(item.driverId));
         if (d && d.bookings) {
-          const targetDateStr = getIsoDateForDay(lead.start_date, item.dayNumber);
+          const targetDateStr = getIsoDateForDay(selectedStartDate, item.dayNumber);
           const conflict = d.bookings.find(b => b.date === targetDateStr && String(b.lead_id) !== String(lead.id) && b.lead_status === 'converted');
           if (conflict && !conflictNames.includes(d.driver_name)) {
             conflictFound = true;
@@ -358,7 +383,8 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           itineraryId: itinId,
-          assignments
+          assignments,
+          startDate: selectedStartDate || null
         })
       });
 
@@ -1599,6 +1625,9 @@ export default function AdminDashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {pending.map(j => {
                           const currentAssignments = fleetAssignments[j.itinerary.id] || {};
+                          const selectedStartDate = fleetStartDates[j.itinerary.id] !== undefined
+                            ? fleetStartDates[j.itinerary.id]
+                            : (j.lead.start_date ? String(j.lead.start_date).substring(0, 10) : "");
                           return (
                             <div key={j.itinerary.id} className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', padding: '1.5rem' }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
@@ -1609,7 +1638,21 @@ export default function AdminDashboard() {
                                   </p>
                                 </div>
                                 <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                                  <div>Start Date: <strong>{j.lead.start_date ? new Date(j.lead.start_date).toLocaleDateString() : 'N/A'}</strong></div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end', marginBottom: '0.3rem' }}>
+                                    <span>Start Date:</span>
+                                    <input 
+                                      type="date"
+                                      className="form-control"
+                                      style={{ display: 'inline-block', width: 'auto', padding: '0.1rem 0.3rem', fontSize: '0.8rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', color: '#FFF' }}
+                                      value={selectedStartDate}
+                                      onChange={(e) => {
+                                        setFleetStartDates(prev => ({
+                                          ...prev,
+                                          [j.itinerary.id]: e.target.value
+                                        }));
+                                      }}
+                                    />
+                                  </div>
                                   <div>Duration: <strong>{j.itinerary.total_days} Days</strong></div>
                                 </div>
                               </div>
@@ -1630,7 +1673,7 @@ export default function AdminDashboard() {
                                 >
                                   <option value="">-- Select Driver --</option>
                                   {fleet
-                                    .filter(d => isDriverFreeForEntireJourney(d, j.lead.id, j.lead.start_date, j.itinerary.total_days))
+                                    .filter(d => isDriverFreeForEntireJourney(d, j.lead.id, selectedStartDate, j.itinerary.total_days))
                                     .map(d => (
                                       <option key={d.id} value={d.id}>
                                         {d.driver_name} ({d.vehicle_model || 'No Vehicle'} - {d.vehicle_number || 'N/A'})
@@ -1659,10 +1702,10 @@ export default function AdminDashboard() {
                                       >
                                         <option value="">-- No driver assigned --</option>
                                         {fleet
-                                          .filter(d => isDriverFreeOnDate(d, j.lead.id, j.lead.start_date, day.day_number) || String(d.id) === String(activeDriverId))
+                                          .filter(d => isDriverFreeOnDate(d, j.lead.id, selectedStartDate, day.day_number) || String(d.id) === String(activeDriverId))
                                           .map(d => (
                                             <option key={d.id} value={d.id}>
-                                              {getDriverOptionTextForDay(d, j.lead.id, j.lead.start_date, day.day_number)}
+                                              {getDriverOptionTextForDay(d, j.lead.id, selectedStartDate, day.day_number)}
                                             </option>
                                           ))
                                         }
@@ -1697,6 +1740,9 @@ export default function AdminDashboard() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {assigned.map(j => {
                           const currentAssignments = fleetAssignments[j.itinerary.id] || {};
+                          const selectedStartDate = fleetStartDates[j.itinerary.id] !== undefined
+                            ? fleetStartDates[j.itinerary.id]
+                            : (j.lead.start_date ? String(j.lead.start_date).substring(0, 10) : "");
                           return (
                             <div key={j.itinerary.id} className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', padding: '1.5rem', opacity: 0.9 }}>
                               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
@@ -1707,7 +1753,21 @@ export default function AdminDashboard() {
                                   </p>
                                 </div>
                                 <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
-                                  <div>Start Date: <strong>{j.lead.start_date ? new Date(j.lead.start_date).toLocaleDateString() : 'N/A'}</strong></div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', justifyContent: 'flex-end', marginBottom: '0.3rem' }}>
+                                    <span>Start Date:</span>
+                                    <input 
+                                      type="date"
+                                      className="form-control"
+                                      style={{ display: 'inline-block', width: 'auto', padding: '0.1rem 0.3rem', fontSize: '0.8rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', color: '#FFF' }}
+                                      value={selectedStartDate}
+                                      onChange={(e) => {
+                                        setFleetStartDates(prev => ({
+                                          ...prev,
+                                          [j.itinerary.id]: e.target.value
+                                        }));
+                                      }}
+                                    />
+                                  </div>
                                   <div>Duration: <strong>{j.itinerary.total_days} Days</strong></div>
                                 </div>
                               </div>
@@ -1731,10 +1791,10 @@ export default function AdminDashboard() {
                                       >
                                         <option value="">-- No driver assigned --</option>
                                         {fleet
-                                          .filter(d => isDriverFreeOnDate(d, j.lead.id, j.lead.start_date, day.day_number) || String(d.id) === String(activeDriverId))
+                                          .filter(d => isDriverFreeOnDate(d, j.lead.id, selectedStartDate, day.day_number) || String(d.id) === String(activeDriverId))
                                           .map(d => (
                                             <option key={d.id} value={d.id}>
-                                              {getDriverOptionTextForDay(d, j.lead.id, j.lead.start_date, day.day_number)}
+                                              {getDriverOptionTextForDay(d, j.lead.id, selectedStartDate, day.day_number)}
                                             </option>
                                           ))
                                         }
