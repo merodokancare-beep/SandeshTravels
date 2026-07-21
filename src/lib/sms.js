@@ -29,17 +29,24 @@ export async function sendSMS(toPhone, messageText) {
     const url = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
     const authHeader = 'Basic ' + Buffer.from(`${twilioSid}:${twilioAuthToken}`).toString('base64');
     
+    const isMessagingService = twilioSmsSender.trim().startsWith('MG');
+    const smsParams = {
+      To: `+${cleanPhone}`,
+      Body: messageText
+    };
+    if (isMessagingService) {
+      smsParams.MessagingServiceSid = twilioSmsSender.trim();
+    } else {
+      smsParams.From = twilioSmsSender.trim();
+    }
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Authorization': authHeader,
         'Content-Type': 'application/x-www-form-urlencoded'
       },
-      body: new URLSearchParams({
-        To: `+${cleanPhone}`,
-        From: twilioSmsSender,
-        Body: messageText
-      })
+      body: new URLSearchParams(smsParams)
     });
 
     const data = await response.json();
