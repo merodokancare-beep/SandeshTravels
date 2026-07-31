@@ -47,7 +47,7 @@ export class LeadController {
         );
       }
 
-      const { leadId, status, startDate } = await request.json();
+      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -58,7 +58,7 @@ export class LeadController {
 
       await client.query('BEGIN');
 
-      const updatedLead = await LeadModel.update(leadId, { status, startDate }, client);
+      const updatedLead = await LeadModel.update(leadId, { clientName, clientPhone, travelDates, numTravelers, status, startDate }, client);
       if (!updatedLead) {
         await client.query('ROLLBACK');
         return NextResponse.json(

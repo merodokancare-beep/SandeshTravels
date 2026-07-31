@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
 
 function getTodayDateString() {
   const today = new Date();
@@ -50,6 +51,8 @@ export default function AdminDashboard() {
   // Book Enquiry Modal states
   const [showBookModal, setShowBookModal] = useState(false);
   const [newLeadName, setNewLeadName] = useState('');
+  const [newLeadCountryCode, setNewLeadCountryCode] = useState('+91');
+  const [newLeadLocalPhone, setNewLeadLocalPhone] = useState('');
   const [newLeadPhone, setNewLeadPhone] = useState('');
   const [newLeadDates, setNewLeadDates] = useState('');
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
@@ -711,6 +714,7 @@ export default function AdminDashboard() {
     }
 
     setActionLoading(true);
+    const fullPhone = formatFullPhoneNumber(newLeadCountryCode, newLeadLocalPhone);
 
     try {
       const res = await fetch('/api/admin/leads', {
@@ -718,7 +722,7 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           clientName: newLeadName,
-          clientPhone: newLeadPhone,
+          clientPhone: fullPhone,
           travelDates: newLeadDates,
           numTravelers: newLeadTravelers,
           startDate: newLeadStartDate || null,
@@ -1121,35 +1125,62 @@ export default function AdminDashboard() {
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                             <span className={`badge badge-${lead.status}`}>{lead.status}</span>
-                            <select
-                              value={lead.status}
-                              onChange={(e) => handleStatusChange(lead.id, e.target.value)}
-                              disabled={actionLoading}
-                              style={{ 
-                                background: 'var(--bg-surface-elevated)', 
-                                border: '1px solid var(--border)',
-                                color: 'var(--text-primary)',
-                                borderRadius: '4px',
-                                padding: '0.2rem',
-                                fontSize: '0.8rem'
-                              }}
-                            >
-                              <option value="new">New</option>
-                              <option value="quoted">Quoted</option>
-                              <option value="converted">Converted</option>
-                              <option value="completed">Completed</option>
-                              <option value="cancelled">Cancelled</option>
-                            </select>
+                            {lead.status !== 'completed' && (
+                              <select
+                                value={lead.status}
+                                onChange={(e) => handleStatusChange(lead.id, e.target.value)}
+                                disabled={actionLoading}
+                                style={{ 
+                                  background: 'var(--bg-surface-elevated)', 
+                                  border: '1px solid var(--border)',
+                                  color: 'var(--text-primary)',
+                                  borderRadius: '4px',
+                                  padding: '0.2rem',
+                                  fontSize: '0.8rem'
+                                }}
+                              >
+                                <option value="new">New</option>
+                                <option value="quoted">Quoted</option>
+                                <option value="converted">Converted</option>
+                                <option value="completed">Completed</option>
+                                <option value="cancelled">Cancelled</option>
+                              </select>
+                            )}
                           </div>
                         </td>
                         <td>
-                          <Link 
-                            href={`/admin/itinerary/${lead.id}`} 
-                            className="btn btn-secondary"
-                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'inline-flex' }}
-                          >
-                            <i className="fa-solid fa-compass" style={{ color: 'var(--primary)' }}></i> Itinerary Builder
-                          </Link>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+                            {(lead.status === 'new' || lead.status === 'quoted') && (
+                              <Link 
+                                href={`/admin/itinerary/${lead.id}`} 
+                                className="btn btn-secondary"
+                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                              >
+                                <i className="fa-solid fa-compass" style={{ color: 'var(--primary)' }}></i> Itinerary Builder
+                              </Link>
+                            )}
+
+                            {(lead.status === 'converted' || lead.status === 'completed') && (
+                              <Link 
+                                href={`/admin/invoice/${lead.id}`} 
+                                className="btn btn-secondary"
+                                style={{ 
+                                  padding: '0.4rem 0.6rem', 
+                                  fontSize: '0.8rem', 
+                                  color: '#38bdf8', 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.3rem', 
+                                  border: '1px solid rgba(56,189,248,0.3)', 
+                                  background: 'rgba(56,189,248,0.05)',
+                                  whiteSpace: 'nowrap'
+                                }}
+                                title="Generate & Print Bill Invoice"
+                              >
+                                <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
+                              </Link>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1597,7 +1628,7 @@ export default function AdminDashboard() {
                                 </div>
                               )}
 
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem' }}>
+                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
                                 {j.lead.status === 'converted' && (
                                   <button 
                                     className="btn btn-secondary"
@@ -1608,12 +1639,33 @@ export default function AdminDashboard() {
                                     <i className="fa-solid fa-circle-check"></i> Complete Journey
                                   </button>
                                 )}
+                                {(j.lead.status === 'new' || j.lead.status === 'quoted') && (
+                                  <Link
+                                    href={`/admin/itinerary/${j.lead.id}`}
+                                    className="btn btn-secondary"
+                                    style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.8rem', textAlign: 'center' }}
+                                  >
+                                    <i className="fa-solid fa-sliders"></i> Edit Itinerary
+                                  </Link>
+                                )}
                                 <Link
-                                  href={`/admin/itinerary/${j.lead.id}`}
+                                  href={`/admin/invoice/${j.lead.id}`}
                                   className="btn btn-secondary"
-                                  style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.8rem', textAlign: 'center' }}
+                                  style={{ 
+                                    padding: '0.4rem 0.6rem', 
+                                    fontSize: '0.8rem', 
+                                    color: '#38bdf8', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.3rem', 
+                                    border: '1px solid rgba(56,189,248,0.3)', 
+                                    background: 'rgba(56,189,248,0.05)',
+                                    flexGrow: 1,
+                                    justifyContent: 'center'
+                                  }}
+                                  title="Generate & Print Bill Invoice"
                                 >
-                                  <i className="fa-solid fa-sliders"></i> Edit Itinerary
+                                  <i className="fa-solid fa-file-invoice-dollar"></i> Bill Invoice
                                 </Link>
                                 <button
                                    onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id)}
@@ -2280,14 +2332,38 @@ export default function AdminDashboard() {
 
               <div className="form-group">
                 <label>WhatsApp / Phone Number *</label>
-                <input 
-                  type="tel" 
-                  className="form-control"
-                  placeholder="e.g. +977 9851xxxxxx"
-                  value={newLeadPhone}
-                  onChange={(e) => setNewLeadPhone(e.target.value)}
-                  required
-                />
+                <div style={{ display: 'flex', gap: '0.35rem' }}>
+                  <select
+                    className="form-control"
+                    style={{ width: '95px', padding: '0.35rem 0.2rem', fontSize: '0.85rem', flexShrink: 0, background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                    value={newLeadCountryCode}
+                    onChange={(e) => setNewLeadCountryCode(e.target.value)}
+                  >
+                    {COUNTRY_CODES.map(c => (
+                      <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                    ))}
+                  </select>
+                  <input 
+                    type="tel" 
+                    className="form-control"
+                    placeholder="10-digit mobile no."
+                    value={newLeadLocalPhone}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val.startsWith('+')) {
+                        const parsed = parsePhoneNumber(val);
+                        setNewLeadCountryCode(parsed.countryCode);
+                        setNewLeadLocalPhone(parsed.localNumber);
+                      } else {
+                        setNewLeadLocalPhone(val.replace(/\D/g, ''));
+                      }
+                    }}
+                    required
+                  />
+                </div>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                  Saved as: <strong style={{ color: 'var(--accent-teal)' }}>{formatFullPhoneNumber(newLeadCountryCode, newLeadLocalPhone) || 'None'}</strong>
+                </span>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>

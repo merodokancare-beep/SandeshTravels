@@ -40,38 +40,52 @@ export class LeadModel {
 
   static async update(id, fields, client = null) {
     const q = client ? client.query.bind(client) : query;
-    const { status, startDate } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, status, startDate } = fields;
 
-    let res;
-    if (status !== undefined && startDate !== undefined) {
-      const setConvertedSql = status === 'converted' ? ', converted_at = CURRENT_DATE' : '';
-      res = await q(
-        `UPDATE leads 
-         SET status = $1, start_date = $2 ${setConvertedSql}
-         WHERE id = $3 
-         RETURNING *`,
-        [status, startDate || null, id]
-      );
-    } else if (status !== undefined) {
-      const setConvertedSql = status === 'converted' ? ', converted_at = CURRENT_DATE' : '';
-      res = await q(
-        `UPDATE leads 
-         SET status = $1 ${setConvertedSql}
-         WHERE id = $2 
-         RETURNING *`,
-        [status, id]
-      );
-    } else if (startDate !== undefined) {
-      res = await q(
-        `UPDATE leads 
-         SET start_date = $1 
-         WHERE id = $2 
-         RETURNING *`,
-        [startDate || null, id]
-      );
-    } else {
+    const updates = [];
+    const values = [];
+    let idx = 1;
+
+    if (clientName !== undefined) {
+      updates.push(`client_name = $${idx++}`);
+      values.push(clientName);
+    }
+    if (clientPhone !== undefined) {
+      updates.push(`client_phone = $${idx++}`);
+      values.push(clientPhone);
+    }
+    if (travelDates !== undefined) {
+      updates.push(`travel_dates = $${idx++}`);
+      values.push(travelDates);
+    }
+    if (numTravelers !== undefined) {
+      updates.push(`num_travelers = $${idx++}`);
+      values.push(numTravelers);
+    }
+    if (status !== undefined) {
+      updates.push(`status = $${idx++}`);
+      values.push(status);
+      if (status === 'converted') {
+        updates.push(`converted_at = CURRENT_DATE`);
+      }
+    }
+    if (startDate !== undefined) {
+      updates.push(`start_date = $${idx++}`);
+      values.push(startDate || null);
+    }
+
+    if (updates.length === 0) {
       throw new Error('No fields provided to update lead');
     }
+
+    values.push(id);
+    const res = await q(
+      `UPDATE leads 
+       SET ${updates.join(', ')} 
+       WHERE id = $${idx} 
+       RETURNING *`,
+      values
+    );
 
     return res.rows[0] || null;
   }

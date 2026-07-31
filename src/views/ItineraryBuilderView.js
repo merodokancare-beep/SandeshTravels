@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
 
 function getFormattedDateForDay(startDate, dayNum) {
   if (!startDate) return '';
@@ -43,10 +44,22 @@ function getIsoDateForDay(startDateStr, dayNum) {
   return `${y}-${m}-${d}`;
 }
 
-export default function ItineraryBuilder({ params }) {
-  const { leadId } = use(params);
+export default function ItineraryBuilder({ params, leadId: propLeadId }) {
+  let leadId = propLeadId;
+  if (!leadId && params) {
+    const unwrapped = typeof params.then === 'function' ? use(params) : params;
+    leadId = unwrapped?.leadId;
+  }
   const [lead, setLead] = useState(null);
   const [startDate, setStartDate] = useState('');
+  const [clientName, setClientName] = useState('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState('+91');
+  const [localPhone, setLocalPhone] = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  const [travelDates, setTravelDates] = useState('');
+  const [numTravelers, setNumTravelers] = useState(1);
+  const [isEditingGuest, setIsEditingGuest] = useState(false);
+  const [guestSaveLoading, setGuestSaveLoading] = useState(false);
   const [itineraryId, setItineraryId] = useState(null);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('0.00');
@@ -184,6 +197,15 @@ export default function ItineraryBuilder({ params }) {
         const itinData = await itinRes.json();
         
         setLead(itinData.lead);
+        if (itinData.lead) {
+          setClientName(itinData.lead.client_name || '');
+          const parsedPhone = parsePhoneNumber(itinData.lead.client_phone);
+          setPhoneCountryCode(parsedPhone.countryCode);
+          setLocalPhone(parsedPhone.localNumber);
+          setClientPhone(itinData.lead.client_phone || '');
+          setTravelDates(itinData.lead.travel_dates || '');
+          setNumTravelers(itinData.lead.num_travelers || 1);
+        }
         if (itinData.lead.start_date) {
           setStartDate(itinData.lead.start_date.substring(0, 10));
         }
@@ -303,6 +325,49 @@ export default function ItineraryBuilder({ params }) {
       setSelectedTemplateId(''); // reset selection state
       setSuccess(`Loaded preset package "${selected.name}" template. Remember to hit "Save & Publish Itinerary" below to update changes!`);
       setError('');
+    }
+  };
+
+  const handleSaveGuestDetails = async () => {
+    setError('');
+    setSuccess('');
+    setGuestSaveLoading(true);
+    const fullPhone = formatFullPhoneNumber(phoneCountryCode, localPhone);
+    try {
+      const res = await fetch('/api/admin/leads', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          clientName,
+          clientPhone: fullPhone,
+          travelDates,
+          numTravelers
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLead(data.lead);
+        setClientName(data.lead.client_name || '');
+        const parsed = parsePhoneNumber(data.lead.client_phone);
+        setPhoneCountryCode(parsed.countryCode);
+        setLocalPhone(parsed.localNumber);
+        setClientPhone(data.lead.client_phone || '');
+        setTravelDates(data.lead.travel_dates || '');
+        setNumTravelers(data.lead.num_travelers || 1);
+        setIsEditingGuest(false);
+        setSuccess(`Guest details updated successfully! Saved mobile number: "${data.lead.client_phone}".`);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        setError(data.error || 'Failed to update guest details.');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Network error updating guest details.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } finally {
+      setGuestSaveLoading(false);
     }
   };
 
@@ -463,6 +528,24 @@ export default function ItineraryBuilder({ params }) {
               >
                 <i className="fa-solid fa-eye" style={{ color: 'var(--primary)' }}></i> Preview Plan
               </a>
+              {lead && (lead.status === 'converted' || lead.status === 'completed') && (
+                <Link 
+                  href={`/admin/invoice/${lead.id}`}
+                  className="btn btn-secondary"
+                  style={{ 
+                    borderColor: '#38bdf8', 
+                    color: '#38bdf8', 
+                    fontWeight: '600', 
+                    display: 'inline-flex', 
+                    alignItems: 'center', 
+                    gap: '0.4rem', 
+                    textDecoration: 'none' 
+                  }}
+                  title="View & Print Tax Bill Invoice"
+                >
+                  <i className="fa-solid fa-file-invoice-dollar"></i> Bill Invoice
+                </Link>
+              )}
               <a 
                 href={getWhatsAppLink()}
                 target="_blank" 
@@ -559,54 +642,156 @@ export default function ItineraryBuilder({ params }) {
           {/* Left panel: Lead Info & Quick tools */}
           <aside style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             <section className="glass-card">
-              <h3 style={{ fontSize: '1.1rem', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-                Guest Details
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.9rem' }}>
-                <div>
-                  <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>NAME</label>
-                  <strong style={{ color: '#FFF' }}>{lead?.client_name}</strong>
-                </div>
-                <div>
-                  <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>PHONE / WHATSAPP</label>
-                  <strong>{lead?.client_phone}</strong>
-                </div>
-                <div>
-                  <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>TRAVEL DATES TEXT</label>
-                  <strong>{lead?.travel_dates || 'Flexible'}</strong>
-                </div>
-                
-                {/* Real Journey Start Date Input */}
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
-                  <label style={{ color: 'var(--primary)', display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.25rem' }}>
-                    JOURNEY START DATE *
-                  </label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    style={{ padding: '0.4rem', fontSize: '0.85rem' }}
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    min={getTodayString()}
-                  />
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
-                    Required to track driver/vehicle availability calendar today.
-                  </span>
-                </div>
-
-                <div>
-                  <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>GUEST SIZE</label>
-                  <strong>{lead?.num_travelers} travelers</strong>
-                </div>
-                <div>
-                  <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>SOURCE</label>
-                  {lead?.partner_name ? (
-                    <span className="badge badge-converted">Referral: {lead.partner_name}</span>
-                  ) : (
-                    <span className="badge badge-new">B2C Direct Lead</span>
-                  )}
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                <h3 style={{ fontSize: '1.1rem', margin: 0 }}>
+                  Guest Details
+                </h3>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                  onClick={() => setIsEditingGuest(!isEditingGuest)}
+                >
+                  <i className={`fa-solid ${isEditingGuest ? 'fa-xmark' : 'fa-pen-to-square'}`} style={{ color: 'var(--primary)' }}></i>
+                  {isEditingGuest ? 'Cancel Edit' : 'Edit Info'}
+                </button>
               </div>
+
+              {isEditingGuest ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.85rem' }}>
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>GUEST NAME</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={clientName}
+                      onChange={(e) => setClientName(e.target.value)}
+                      placeholder="Guest full name"
+                      style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>PHONE / WHATSAPP NUMBER</label>
+                    <div style={{ display: 'flex', gap: '0.35rem' }}>
+                      <select
+                        className="form-control"
+                        style={{ width: '95px', padding: '0.35rem 0.2rem', fontSize: '0.8rem', flexShrink: 0, background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                        value={phoneCountryCode}
+                        onChange={(e) => setPhoneCountryCode(e.target.value)}
+                      >
+                        {COUNTRY_CODES.map(c => (
+                          <option key={c.code} value={c.code}>{c.flag} {c.code}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="tel"
+                        className="form-control"
+                        value={localPhone}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val.startsWith('+')) {
+                            const parsed = parsePhoneNumber(val);
+                            setPhoneCountryCode(parsed.countryCode);
+                            setLocalPhone(parsed.localNumber);
+                          } else {
+                            setLocalPhone(val.replace(/\D/g, ''));
+                          }
+                        }}
+                        placeholder="10-digit mobile number"
+                        style={{ flexGrow: 1, padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                      Full number preview: <strong style={{ color: 'var(--accent-teal)' }}>{formatFullPhoneNumber(phoneCountryCode, localPhone) || 'None'}</strong>
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>TRAVEL DATES ESTIMATE</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={travelDates}
+                      onChange={(e) => setTravelDates(e.target.value)}
+                      placeholder="e.g. Flexible / July 1 - July 5"
+                      style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>GUEST SIZE (PASSENGERS)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      className="form-control"
+                      value={numTravelers}
+                      onChange={(e) => setNumTravelers(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ marginTop: '0.5rem', width: '100%', padding: '0.4rem', fontSize: '0.85rem' }}
+                    onClick={handleSaveGuestDetails}
+                    disabled={guestSaveLoading}
+                  >
+                    {guestSaveLoading ? (
+                      <><i className="fa-solid fa-spinner fa-spin"></i> Saving...</>
+                    ) : (
+                      <><i className="fa-solid fa-floppy-disk"></i> Save Guest Details</>
+                    )}
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', fontSize: '0.9rem' }}>
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>NAME</label>
+                    <strong style={{ color: '#FFF' }}>{lead?.client_name}</strong>
+                  </div>
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>PHONE / WHATSAPP</label>
+                    <strong style={{ color: 'var(--accent-teal)' }}>{lead?.client_phone}</strong>
+                  </div>
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>TRAVEL DATES TEXT</label>
+                    <strong>{lead?.travel_dates || 'Flexible'}</strong>
+                  </div>
+                  
+                  {/* Real Journey Start Date Input */}
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: '0.75rem', marginTop: '0.25rem' }}>
+                    <label style={{ color: 'var(--primary)', display: 'block', fontSize: '0.8rem', fontWeight: '600', marginBottom: '0.25rem' }}>
+                      JOURNEY START DATE *
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      style={{ padding: '0.4rem', fontSize: '0.85rem' }}
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      min={getTodayString()}
+                    />
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                      Required to track driver/vehicle availability calendar today.
+                    </span>
+                  </div>
+
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>GUEST SIZE</label>
+                    <strong>{lead?.num_travelers} travelers</strong>
+                  </div>
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>SOURCE</label>
+                    {lead?.partner_name ? (
+                      <span className="badge badge-converted">Referral: {lead.partner_name}</span>
+                    ) : (
+                      <span className="badge badge-new">B2C Direct Lead</span>
+                    )}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="glass-card">
