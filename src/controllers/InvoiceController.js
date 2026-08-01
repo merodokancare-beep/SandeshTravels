@@ -61,7 +61,7 @@ export class InvoiceController {
         endDateObj.setDate(startDateObj.getDate() + (parseInt(itinerary.total_days, 10) || 1) - 1);
       }
 
-      const invoiceNumber = `VT-INV-${String(lead.id).padStart(5, '0')}`;
+      const invoiceNumber = `ST-INV-${String(lead.id).padStart(5, '0')}`;
       const basePrice = itinerary ? (parseFloat(itinerary.price) || 0) : 0;
       const gstRate = 0.05; // 5% GST
       const gstAmount = Math.round(basePrice * gstRate * 100) / 100;
@@ -77,12 +77,15 @@ export class InvoiceController {
             year: 'numeric'
           }),
           agency: {
-            name: 'Vani Travels',
-            tagline: 'Premium Tour & Fleet Management Operations',
-            phone: '+91 98765 43210',
-            email: 'billing@vanitravels.com',
-            address: 'Main Highway Road, Tour Hub Center, Uttarakhand, India',
-            gstin: '05AAAAA0000A1Z5'
+            name: 'M/s Sandesh Travels',
+            tagline: 'Tours & Travel Company',
+            phone: '+91 9647878373',
+            email: 'santeshtravelsgtk@gmail.com',
+            website: 'www.sandeshtravels.in',
+            address: 'Chota Singtam, Near Kishan School, Aho Busty, Aho Yangtam GPU, Pakyong 737135',
+            license: 'TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282',
+            pan: 'AXXPR3863J',
+            gstin: 'AXXPR3863J'
           },
           client: {
             name: lead.client_name,

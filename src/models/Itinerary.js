@@ -126,9 +126,9 @@ export class ItineraryModel {
       JOIN itineraries i_other ON id_day_other.itinerary_id = i_other.id
       JOIN leads l_other ON i_other.lead_id = l_other.id
       WHERE i.id = $1
-        AND l_target.status = 'converted'
+        AND l_target.status IN ('converted', 'assigned')
         AND l_other.id != l_target.id
-        AND l_other.status = 'converted'
+        AND l_other.status IN ('converted', 'assigned')
         AND l_target.start_date IS NOT NULL
         AND l_other.start_date IS NOT NULL
         AND (l_target.start_date + (id_day.day_number - 1) * INTERVAL '1 day')::date = 
@@ -153,7 +153,7 @@ export class ItineraryModel {
           JOIN leads l_other ON i_other.lead_id = l_other.id
           WHERE l_target.id = $2
             AND l_other.id != $2
-            AND l_other.status = 'converted'
+            AND l_other.status IN ('converted', 'assigned')
             AND l_target.start_date IS NOT NULL
             AND l_other.start_date IS NOT NULL
             AND (l_target.start_date + (id_day.day_number - 1) * INTERVAL '1 day')::date = 

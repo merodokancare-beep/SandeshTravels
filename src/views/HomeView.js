@@ -47,19 +47,8 @@ export default function Home() {
           alignItems: 'center'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{
-              background: 'linear-gradient(135deg, var(--primary), var(--accent-teal))',
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800
-            }}>
-              <i className="fa-solid fa-route" style={{ color: '#FFF' }}></i>
-            </div>
-            <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>VaniTravels</span>
+            <img src="/logo.png" alt="Sandesh Travels" style={{ height: '42px', objectFit: 'contain', background: '#fff', borderRadius: '6px', padding: '2px 6px' }} />
+            <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Sandesh Travels</span>
           </div>
 
           <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
@@ -85,7 +74,7 @@ export default function Home() {
             Tailor-Made Adventures <br />Designed Just For You
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.15rem', lineHeight: '1.6', marginBottom: '2.5rem' }}>
-            Plan your next get-away with VaniTravels. Tell us your travel dream, and we will build a custom day-by-day itinerary and track your journey right up to your safe return.
+            Plan your next get-away with Sandesh Travels. Tell us your travel dream, and we will build a custom day-by-day itinerary and track your journey right up to your safe return.
           </p>
           <a href="#inquiry-section" className="btn btn-primary" style={{ padding: '0.9rem 2rem', fontSize: '1rem' }}>
             Contact Inquiry Desk <i className="fa-solid fa-arrow-down" style={{ marginLeft: '0.5rem' }}></i>
@@ -151,8 +140,8 @@ export default function Home() {
                   <i className="fa-brands fa-whatsapp"></i>
                 </div>
                 <div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Message on WhatsApp</div>
-                  <a href="https://wa.me/9779851000000" target="_blank" rel="noopener noreferrer" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>+977 98510 00000</a>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>WhatsApp Desk</div>
+                  <a href="https://wa.me/919647878373" target="_blank" rel="noopener noreferrer" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>+91 9647878373</a>
                 </div>
               </div>
 
@@ -162,7 +151,7 @@ export default function Home() {
                 </div>
                 <div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Call Direct Support</div>
-                  <a href="tel:+9779851000000" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>+977 98510 00000</a>
+                  <a href="tel:+919647878373" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>+91 9647878373</a>
                 </div>
               </div>
 
@@ -172,13 +161,23 @@ export default function Home() {
                 </div>
                 <div>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Email Inquiry Desk</div>
-                  <a href="mailto:bookings@vanitravels.com" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>bookings@vanitravels.com</a>
+                  <a href="mailto:santeshtravelsgtk@gmail.com" style={{ color: '#FFF', fontWeight: '600', textDecoration: 'none' }}>santeshtravelsgtk@gmail.com</a>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', background: 'var(--bg-surface-elevated)', padding: '1rem', borderRadius: 'var(--border-radius-md)', border: '1px solid var(--border)' }}>
+                <div style={{ fontSize: '1.5rem', color: 'var(--primary)' }}>
+                  <i className="fa-solid fa-location-dot"></i>
+                </div>
+                <div style={{ fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.4' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Office Location</div>
+                  Chota Singtam, Near Kishan School, Aho Busty, Pakyong - 737135
                 </div>
               </div>
             </div>
 
             <a 
-              href="https://wa.me/9779851000000?text=Hi%20VaniTravels,%20I%20would%20like%20to%20plan%20a%20custom%20trip%20with%20you." 
+              href="https://wa.me/919647878373?text=Hi%20Sandesh%20Travels,%20I%20would%20like%20to%20plan%20a%20trip." 
               target="_blank" 
               rel="noopener noreferrer" 
               className="btn btn-primary" 
@@ -241,7 +240,7 @@ export default function Home() {
         textAlign: 'center'
       }}>
         <div style={{ maxWidth: '1200px', margin: '0 auto', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-          <p>© 2026 VaniTravels Portal. All rights reserved.</p>
+          <p>© 2026 Sandesh Travels. All rights reserved.</p>
           <p style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
             Built for premium hotels and travel operators. Developed using Next.js, PostgreSQL, and Vanilla CSS.
           </p>

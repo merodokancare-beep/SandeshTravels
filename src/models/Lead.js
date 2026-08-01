@@ -106,7 +106,7 @@ export class LeadModel {
       JOIN leads l_other ON i_other.lead_id = l_other.id
       WHERE l_target.id = $1
         AND l_other.id != $1
-        AND l_other.status = 'converted'
+        AND l_other.status IN ('converted', 'assigned')
         AND l_target.start_date IS NOT NULL
         AND l_other.start_date IS NOT NULL
         AND (l_target.start_date + (id_day.day_number - 1) * INTERVAL '1 day')::date = 
@@ -120,7 +120,7 @@ export class LeadModel {
       SELECT l.id as lead_id, l.start_date, i.total_days, i.id as itinerary_id
       FROM leads l
       JOIN itineraries i ON l.id = i.lead_id
-      WHERE l.status = 'converted' AND l.start_date IS NOT NULL
+      WHERE l.status IN ('converted', 'assigned') AND l.start_date IS NOT NULL
     `);
 
     const parseLocalDate = (dateInput) => {
@@ -170,7 +170,7 @@ export class LeadModel {
       FROM leads l
       LEFT JOIN itineraries i ON l.id = i.lead_id
       LEFT JOIN partners p ON l.partner_id = p.id
-      WHERE l.status IN ('converted', 'completed')
+      WHERE l.status IN ('converted', 'assigned', 'completed')
       ORDER BY l.start_date ASC, l.created_at DESC
     `);
     return res.rows;

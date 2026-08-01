@@ -37,7 +37,7 @@ export class DriverController {
         );
       }
 
-      const { driverName, driverPhone, vehicleNumber, vehicleModel } = await request.json();
+      const { driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner } = await request.json();
 
       if (!driverName || !driverPhone) {
         return NextResponse.json(
@@ -58,7 +58,7 @@ export class DriverController {
         }
       }
 
-      const driver = await DriverModel.create({ driverName, driverPhone, vehicleNumber, vehicleModel });
+      const driver = await DriverModel.create({ driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner });
 
       return NextResponse.json({
         success: true,
@@ -83,7 +83,7 @@ export class DriverController {
         );
       }
 
-      const { id, driverName, driverPhone, vehicleNumber, vehicleModel } = await request.json();
+      const { id, driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner } = await request.json();
 
       if (!id || !driverName || !driverPhone) {
         return NextResponse.json(
@@ -104,7 +104,7 @@ export class DriverController {
         }
       }
 
-      const driver = await DriverModel.update(parseInt(id, 10), { driverName, driverPhone, vehicleNumber, vehicleModel });
+      const driver = await DriverModel.update(parseInt(id, 10), { driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner });
 
       return NextResponse.json({
         success: true,

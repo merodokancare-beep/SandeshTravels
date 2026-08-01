@@ -91,7 +91,7 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
 
   const getWhatsAppShareUrl = () => {
     const clientPhone = invoice.client.phone.replace(/\D/g, '');
-    let msg = `Hi ${invoice.client.name}, here is your official Tax & Bill Invoice from Vani Travels ✨\n\n`;
+    let msg = `Hi ${invoice.client.name}, here is your official Tax & Bill Invoice from Sandesh Travels ✨\n\n`;
     msg += `🧾 *Invoice No:* ${invoice.invoiceNumber}\n`;
     msg += `📅 *Invoice Date:* ${invoice.invoiceDate}\n`;
     msg += `🗺️ *Journey:* ${invoice.itinerary?.title || 'Tour Package'}\n`;
@@ -105,7 +105,7 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
       msg += `🏷️ *Discount:* ₹${parseFloat(discount).toLocaleString('en-IN')}\n`;
     }
     msg += `✅ *Total Amount Paid:* ₹${computedTotal.toLocaleString('en-IN')}\n\n`;
-    msg += `Thank you for choosing Vani Travels for your journey! 🚗 Wish you all the best.`;
+    msg += `Thank you for choosing Sandesh Travels for your journey! 🚗 Wish you all the best.`;
 
     return `https://api.whatsapp.com/send?phone=${clientPhone}&text=${encodeURIComponent(msg)}`;
   };
@@ -216,72 +216,76 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
 
       {/* Printable Invoice Container */}
       <div className="invoice-paper" style={{
-        maxWidth: '900px',
+        maxWidth: '920px',
         margin: '0 auto',
-        background: '#1e293b',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        background: '#ffffff',
+        color: '#0f172a',
         borderRadius: '16px',
-        padding: '2.5rem',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.3)'
+        padding: '3rem',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+        fontFamily: "'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif"
       }}>
         {/* Header Section */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid rgba(255, 255, 255, 0.1)', paddingBottom: '1.5rem', marginBottom: '2rem' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{
-                width: '42px',
-                height: '42px',
-                borderRadius: '10px',
-                background: 'linear-gradient(135deg, #0284c7, #0d9488)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '1.4rem',
-                color: '#FFF',
-                boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
-              }}>
-                <i className="fa-solid fa-route"></i>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '1.75rem', marginBottom: '2rem' }}>
+          <div style={{ flex: '1 1 540px', maxWidth: '540px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
+              <div style={{ background: '#0f172a', padding: '6px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', flexShrink: 0 }}>
+                <img src="/logo.png" alt="Sandesh Travels" style={{ height: '48px', objectFit: 'contain' }} />
               </div>
               <div>
-                <h1 style={{ margin: 0, fontSize: '1.6rem', fontWeight: '700', letterSpacing: '-0.5px' }}>{invoice.agency.name}</h1>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#94a3b8' }}>{invoice.agency.tagline}</p>
+                <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.02em' }}>{invoice.agency.name || 'M/s Sandesh Travels'}</h1>
+                <p style={{ margin: 0, fontSize: '0.85rem', fontWeight: '600', color: '#0284c7', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{invoice.agency.tagline || 'Tours & Travel Company'}</p>
               </div>
             </div>
 
-            <div style={{ marginTop: '1rem', fontSize: '0.82rem', color: '#cbd5e1', lineHeight: '1.5' }}>
-              <div><i className="fa-solid fa-location-dot" style={{ width: '16px', color: '#38bdf8' }}></i> {invoice.agency.address}</div>
-              <div><i className="fa-solid fa-phone" style={{ width: '16px', color: '#38bdf8' }}></i> {invoice.agency.phone} | <i className="fa-solid fa-envelope" style={{ color: '#38bdf8' }}></i> {invoice.agency.email}</div>
-              <div><i className="fa-solid fa-file-invoice" style={{ width: '16px', color: '#38bdf8' }}></i> GSTIN: <strong>{invoice.agency.gstin}</strong></div>
+            <div style={{ fontSize: '0.83rem', color: '#334155', lineHeight: '1.6', marginTop: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem', marginBottom: '0.2rem' }}>
+                <i className="fa-solid fa-location-dot" style={{ color: '#0284c7', width: '14px', marginTop: '3px', flexShrink: 0 }}></i>
+                <span style={{ color: '#334155', fontWeight: '500' }}>{invoice.agency.address}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.2rem' }}>
+                <span><i className="fa-solid fa-phone" style={{ color: '#0284c7', width: '14px' }}></i> {invoice.agency.phone}</span>
+                <span style={{ color: '#cbd5e1' }}>|</span>
+                <span><i className="fa-solid fa-envelope" style={{ color: '#0284c7', width: '14px' }}></i> {invoice.agency.email}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.4rem' }}>
+                <span><i className="fa-solid fa-globe" style={{ color: '#0284c7', width: '14px' }}></i> {invoice.agency.website || 'www.sandeshtravels.in'}</span>
+              </div>
+              <div style={{ padding: '6px 10px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', fontSize: '0.78rem', color: '#1e293b', lineHeight: '1.5', maxWidth: '520px' }}>
+                <div><strong>PAN:</strong> {invoice.agency.pan || 'AXXPR3863J'}</div>
+                <div><strong>Reg:</strong> TTD:1667/DoT &CAv/Gtk/24/TA &nbsp;|&nbsp; <strong>TL:</strong> EOG/AHY/0282</div>
+              </div>
             </div>
           </div>
 
-          <div style={{ textAlign: 'right' }}>
+          <div style={{ flex: '0 0 auto', textAlign: 'right', minWidth: '200px' }}>
             <div className="badge-print" style={{
               display: 'inline-block',
-              background: 'rgba(14, 165, 233, 0.15)',
-              border: '1px solid rgba(56, 189, 248, 0.3)',
-              color: '#38bdf8',
-              padding: '0.35rem 0.8rem',
+              background: '#0f172a',
+              color: '#ffffff',
+              padding: '0.4rem 1rem',
               borderRadius: '6px',
-              fontWeight: '700',
+              fontWeight: '800',
               fontSize: '0.85rem',
-              marginBottom: '0.75rem'
+              letterSpacing: '0.08em',
+              marginBottom: '0.75rem',
+              boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
             }}>
               TAX BILL / INVOICE
             </div>
-            <div style={{ fontSize: '1.2rem', fontWeight: '700', color: '#f8fafc' }}>{invoice.invoiceNumber}</div>
-            <div style={{ fontSize: '0.85rem', color: '#94a3b8', marginTop: '0.2rem' }}>Date: {invoice.invoiceDate}</div>
-            <div style={{ marginTop: '0.5rem' }}>
+            <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.02em' }}>{invoice.invoiceNumber}</div>
+            <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.2rem', fontWeight: '500' }}>Date: <strong>{invoice.invoiceDate}</strong></div>
+            <div style={{ marginTop: '0.6rem' }}>
               <span className="badge-print" style={{
-                background: invoice.client.status === 'completed' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
-                color: invoice.client.status === 'completed' ? '#4ade80' : '#fde047',
-                border: `1px solid ${invoice.client.status === 'completed' ? '#22c55e' : '#eab308'}`,
-                padding: '0.25rem 0.6rem',
-                borderRadius: '4px',
-                fontSize: '0.75rem',
-                fontWeight: '600'
+                background: invoice.client.status === 'completed' ? '#dcfce7' : '#fef9c3',
+                color: invoice.client.status === 'completed' ? '#15803d' : '#a16207',
+                border: `1px solid ${invoice.client.status === 'completed' ? '#86efac' : '#fde047'}`,
+                padding: '0.35rem 0.8rem',
+                borderRadius: '20px',
+                fontSize: '0.78rem',
+                fontWeight: '700'
               }}>
-                <i className={`fa-solid ${invoice.client.status === 'completed' ? 'fa-circle-check' : 'fa-clock'}`} style={{ marginRight: '0.3rem' }}></i>
+                <i className={`fa-solid ${invoice.client.status === 'completed' ? 'fa-circle-check' : 'fa-clock'}`} style={{ marginRight: '0.35rem' }}></i>
                 {invoice.billing.paymentStatus}
               </span>
             </div>
@@ -293,38 +297,46 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
           gap: '1.5rem',
-          marginBottom: '2rem',
-          background: 'rgba(15, 23, 42, 0.5)',
-          border: '1px solid rgba(255, 255, 255, 0.05)',
-          borderRadius: '12px',
-          padding: '1.25rem'
+          marginBottom: '2rem'
         }}>
-          <div>
-            <h3 style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', marginBottom: '0.5rem' }}>
+          <div style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderLeft: '4px solid #0284c7',
+            borderRadius: '8px',
+            padding: '1.25rem'
+          }}>
+            <h3 style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: '0.5rem', fontWeight: '700' }}>
               Billed To (Traveler / Guest)
             </h3>
-            <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#FFF' }}>{invoice.client.name}</div>
-            <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.25rem' }}>
-              <i className="fa-solid fa-phone" style={{ marginRight: '0.4rem', color: '#38bdf8' }}></i> {invoice.client.phone}
+            <div style={{ fontSize: '1.15rem', fontWeight: '800', color: '#0f172a' }}>{invoice.client.name}</div>
+            <div style={{ fontSize: '0.85rem', color: '#334155', marginTop: '0.3rem' }}>
+              <i className="fa-solid fa-phone" style={{ marginRight: '0.4rem', color: '#0284c7' }}></i> {invoice.client.phone}
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.15rem' }}>
-              <i className="fa-solid fa-user-group" style={{ marginRight: '0.4rem', color: '#38bdf8' }}></i> {invoice.client.numTravelers} Passenger(s)
+            <div style={{ fontSize: '0.85rem', color: '#334155', marginTop: '0.2rem' }}>
+              <i className="fa-solid fa-user-group" style={{ marginRight: '0.4rem', color: '#0284c7' }}></i> {invoice.client.numTravelers} Passenger(s)
             </div>
           </div>
 
-          <div>
-            <h3 style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', marginBottom: '0.5rem' }}>
+          <div style={{
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderLeft: '4px solid #0f172a',
+            borderRadius: '8px',
+            padding: '1.25rem'
+          }}>
+            <h3 style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b', marginBottom: '0.5rem', fontWeight: '700' }}>
               Tour Package & Schedule
             </h3>
-            <div style={{ fontSize: '1rem', fontWeight: '600', color: '#FFF' }}>
+            <div style={{ fontSize: '1.05rem', fontWeight: '700', color: '#0f172a' }}>
               {invoice.itinerary?.title || 'Custom Travel Service'}
             </div>
-            <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.25rem' }}>
-              <i className="fa-solid fa-calendar-days" style={{ marginRight: '0.4rem', color: '#38bdf8' }}></i> {invoice.client.travelDates}
+            <div style={{ fontSize: '0.85rem', color: '#334155', marginTop: '0.3rem' }}>
+              <i className="fa-solid fa-calendar-days" style={{ marginRight: '0.4rem', color: '#0f172a' }}></i> {invoice.client.travelDates}
             </div>
             {invoice.itinerary?.totalDays && (
-              <div style={{ fontSize: '0.85rem', color: '#cbd5e1', marginTop: '0.15rem' }}>
-                <i className="fa-solid fa-stopwatch" style={{ marginRight: '0.4rem', color: '#38bdf8' }}></i> Duration: {invoice.itinerary.totalDays} Days Journey
+              <div style={{ fontSize: '0.85rem', color: '#334155', marginTop: '0.2rem' }}>
+                <i className="fa-solid fa-stopwatch" style={{ marginRight: '0.4rem', color: '#0f172a' }}></i> Duration: {invoice.itinerary.totalDays} Days Journey
               </div>
             )}
           </div>
@@ -332,54 +344,56 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
 
         {/* Day-by-Day Service Breakdown Table */}
         <div style={{ marginBottom: '2rem' }}>
-          <h3 style={{ fontSize: '0.95rem', fontWeight: '600', marginBottom: '0.75rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-            <i className="fa-solid fa-list-check"></i> Executed Service & Logistics Summary
+          <h3 style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '0.75rem', color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <i className="fa-solid fa-list-check" style={{ color: '#0284c7' }}></i> Executed Service & Logistics Summary
           </h3>
 
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
             <table className="invoice-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
               <thead>
-                <tr style={{ background: 'rgba(51, 65, 85, 0.5)', textAlign: 'left' }}>
-                  <th style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', width: '75px' }}>Day</th>
-                  <th style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>Itinerary Program & Sightseeing</th>
-                  <th style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>Dispatched Vehicle & Driver</th>
-                  <th style={{ padding: '0.75rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>Hotel Check-in</th>
+                <tr style={{ background: '#0f172a', color: '#ffffff', textAlign: 'left' }}>
+                  <th style={{ padding: '0.85rem 1rem', width: '80px', fontWeight: '700', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Day</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: '700', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Itinerary Program & Sightseeing</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: '700', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Dispatched Vehicle & Driver</th>
+                  <th style={{ padding: '0.85rem 1rem', fontWeight: '700', fontSize: '0.78rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Hotel Check-in</th>
                 </tr>
               </thead>
               <tbody>
                 {invoice.days && invoice.days.length > 0 ? (
-                  invoice.days.map((d) => (
-                    <tr key={d.id || d.day_number} style={{ borderBottom: '1px solid rgba(255, 255, 255, 0.05)' }}>
-                      <td style={{ padding: '0.75rem 1rem', fontWeight: '600', color: '#38bdf8' }}>Day {d.day_number}</td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
-                        <div>{d.description || 'Full day tour schedule'}</div>
-                        {d.activities && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.15rem' }}>{d.activities}</div>}
+                  invoice.days.map((d, idx) => (
+                    <tr key={d.id || d.day_number} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                      <td style={{ padding: '0.85rem 1rem', fontWeight: '700', color: '#0284c7' }}>Day {d.day_number}</td>
+                      <td style={{ padding: '0.85rem 1rem', color: '#334155', lineHeight: '1.5' }}>
+                        <div style={{ fontWeight: '600', color: '#0f172a' }}>{d.description || 'Full day tour schedule'}</div>
+                        {d.activities && <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>{d.activities}</div>}
                       </td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
+                      <td style={{ padding: '0.85rem 1rem', color: '#334155' }}>
                         {d.driver_name ? (
                           <div>
-                            <strong style={{ color: '#FFF' }}>{d.driver_name}</strong>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{d.vehicle_model} ({d.vehicle_number || 'N/A'})</div>
+                            <strong style={{ color: '#0f172a' }}>{d.driver_name}</strong>
+                            <div style={{ fontSize: '0.75rem', marginTop: '0.2rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', display: 'inline-block', fontWeight: '600' }}>
+                              {d.vehicle_model} {d.vehicle_number ? `(${d.vehicle_number})` : ''}
+                            </div>
                           </div>
                         ) : (
-                          <span style={{ color: '#64748b' }}>Standard Transport</span>
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Standard Transport</span>
                         )}
                       </td>
-                      <td style={{ padding: '0.75rem 1rem', color: '#cbd5e1' }}>
+                      <td style={{ padding: '0.85rem 1rem', color: '#334155' }}>
                         {d.hotel_name ? (
                           <div>
-                            <strong style={{ color: '#FFF' }}>{d.hotel_name}</strong>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{d.hotel_location}</div>
+                            <strong style={{ color: '#0f172a' }}>{d.hotel_name}</strong>
+                            <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{d.hotel_location}</div>
                           </div>
                         ) : (
-                          <span style={{ color: '#64748b' }}>Night Transit / Return</span>
+                          <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Night Transit / Return</span>
                         )}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4" style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8' }}>
+                    <td colSpan="4" style={{ padding: '1.25rem', textAlign: 'center', color: '#64748b' }}>
                       Standard All-inclusive Travel Package & Fleet Services
                     </td>
                   </tr>
@@ -394,26 +408,26 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
           <div style={{
             width: '100%',
             maxWidth: '380px',
-            background: 'rgba(15, 23, 42, 0.6)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            borderRadius: '12px',
+            background: '#f8fafc',
+            border: '1px solid #cbd5e1',
+            borderRadius: '10px',
             padding: '1.25rem',
             fontSize: '0.9rem'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#cbd5e1' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#475569' }}>
               <span>Base Package Amount:</span>
-              <strong style={{ color: '#FFF' }}>₹{basePrice.toLocaleString('en-IN')}</strong>
+              <strong style={{ color: '#0f172a' }}>₹{basePrice.toLocaleString('en-IN')}</strong>
             </div>
 
             {taxRate > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#cbd5e1' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#475569' }}>
                 <span>GST ({taxRate}%):</span>
-                <strong style={{ color: '#FFF' }}>₹{computedGst.toLocaleString('en-IN')}</strong>
+                <strong style={{ color: '#0f172a' }}>₹{computedGst.toLocaleString('en-IN')}</strong>
               </div>
             )}
 
             {discount > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#4ade80' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#15803d' }}>
                 <span>Applied Discount:</span>
                 <strong>- ₹{parseFloat(discount).toLocaleString('en-IN')}</strong>
               </div>
@@ -421,31 +435,34 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
 
             <div style={{
               display: 'flex',
-              justify: 'space-between',
+              justifyContent: 'space-between',
               alignItems: 'center',
-              borderTop: '2px dashed rgba(255, 255, 255, 0.15)',
-              paddingTop: '0.8rem',
-              marginTop: '0.6rem',
-              fontSize: '1.15rem'
+              background: '#0f172a',
+              color: '#ffffff',
+              padding: '0.85rem 1rem',
+              borderRadius: '8px',
+              marginTop: '0.8rem',
+              fontSize: '1.1rem'
             }}>
-              <span style={{ fontWeight: '700', color: '#FFF' }}>Total Payable / Paid:</span>
-              <strong style={{ color: '#38bdf8', fontSize: '1.3rem' }}>₹{computedTotal.toLocaleString('en-IN')}</strong>
+              <span style={{ fontWeight: '700' }}>Total Amount Paid:</span>
+              <strong style={{ color: '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>₹{computedTotal.toLocaleString('en-IN')}</strong>
             </div>
           </div>
         </div>
 
         {/* Footer / Signatures Block */}
-        <div style={{ borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+        <div style={{ borderTop: '2px solid #e2e8f0', paddingTop: '1.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1.5rem', fontSize: '0.8rem', color: '#64748b' }}>
           <div>
-            <h4 style={{ color: '#cbd5e1', marginBottom: '0.3rem', fontSize: '0.85rem' }}>Terms & Notes:</h4>
-            <p style={{ margin: 0, lineHeight: '1.4' }}>• This is a computer-generated tax invoice for travel & fleet operations.</p>
-            <p style={{ margin: 0, lineHeight: '1.4' }}>• All package inclusions, driver fuel, and toll charges are settled as per agreement.</p>
+            <h4 style={{ color: '#0f172a', marginBottom: '0.4rem', fontSize: '0.85rem', fontWeight: '700' }}>Terms & Conditions:</h4>
+            <p style={{ margin: 0, lineHeight: '1.5' }}>• This is an official computer-generated tax invoice issued by Sandesh Travels.</p>
+            <p style={{ margin: 0, lineHeight: '1.5' }}>• All package inclusions, driver fuel, and toll charges are settled as per agreement.</p>
+            <p style={{ margin: 0, lineHeight: '1.5', marginTop: '0.2rem', color: '#0284c7', fontWeight: '600' }}>• Thank you for traveling with Sandesh Travels!</p>
           </div>
 
-          <div style={{ textAlign: 'center', minWidth: '180px' }}>
-            <div style={{ height: '40px', borderBottom: '1px solid #475569', marginBottom: '0.3rem' }}></div>
-            <span style={{ fontWeight: '600', color: '#cbd5e1' }}>Authorized Signatory</span>
-            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>Vani Travels Management</div>
+          <div style={{ textAlign: 'center', minWidth: '200px' }}>
+            <div style={{ height: '50px', borderBottom: '1px dashed #94a3b8', marginBottom: '0.4rem' }}></div>
+            <span style={{ fontWeight: '700', color: '#0f172a', fontSize: '0.85rem' }}>Authorized Signatory</span>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '500' }}>Sandesh Travels Management</div>
           </div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 /**
- * VaniTravels WhatsApp API Dispatcher
+ * Sandesh Travels WhatsApp API Dispatcher
  * Integrates with Meta Cloud API for WhatsApp Business messaging.
  * Uses placeholder configurations from .env.local.
  */

@@ -126,11 +126,12 @@ export default function PartnerDashboard() {
       {/* Sidebar navigation */}
       <aside className="sidebar">
         <div>
-          <div className="brand-section">
-            <div className="brand-logo">
-              <i className="fa-solid fa-hotel"></i>
+          <div className="brand-section" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <img src="/logo.png" alt="Sandesh Travels" style={{ height: '38px', objectFit: 'contain', background: '#fff', borderRadius: '6px', padding: '2px 6px' }} />
+            <div>
+              <div className="brand-name" style={{ fontSize: '1.1rem', fontWeight: 800 }}>Sandesh Travels</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Partner Portal</div>
             </div>
-            <div className="brand-name">VaniTravels</div>
           </div>
           <nav className="nav-menu">
             <a className="nav-link active">
@@ -204,7 +205,7 @@ export default function PartnerDashboard() {
             </div>
             <div className="stat-info">
               <div className="stat-value">{convertedLeads}</div>
-              <div className="stat-label">Converted / Trips</div>
+              <div className="stat-label">Confirmed Trips</div>
             </div>
           </div>
         </section>
@@ -325,7 +326,7 @@ export default function PartnerDashboard() {
               }}>
                 <i className="fa-regular fa-folder-open fa-3x" style={{ marginBottom: '1rem' }}></i>
                 <p>No referrals submitted yet.</p>
-                <p style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Use the referral form to send guest leads to VaniTravels admin.</p>
+                <p style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>Use the referral form to send guest leads to Sandesh Travels admin.</p>
               </div>
             ) : (
               <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
@@ -352,7 +353,7 @@ export default function PartnerDashboard() {
                         </td>
                         <td>
                           <span className={`badge badge-${lead.status}`}>
-                            {lead.status}
+                            {lead.status === 'converted' ? 'CONFIRMED' : lead.status}
                           </span>
                         </td>
                       </tr>

@@ -23,16 +23,22 @@ export class FleetController {
       // 2. Fetch all active bookings/assigned driver days
       const bookingRows = await DriverModel.getDriverBookings();
 
+      const parseLocalDateString = (dateInput) => {
+        if (!dateInput) return '';
+        const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+        if (!isNaN(d.getTime())) {
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+        return String(dateInput).substring(0, 10);
+      };
+
       const getIsoDateForDay = (startDateStr, dayNum) => {
         if (!startDateStr) return '';
-        let dateStr = startDateStr;
-        if (startDateStr instanceof Date) {
-          const y = startDateStr.getFullYear();
-          const m = String(startDateStr.getMonth() + 1).padStart(2, '0');
-          const d = String(startDateStr.getDate()).padStart(2, '0');
-          dateStr = `${y}-${m}-${d}`;
-        }
-        const parts = String(dateStr).substring(0, 10).split('-');
+        const cleanDateStr = parseLocalDateString(startDateStr);
+        const parts = cleanDateStr.split('-');
         if (parts.length !== 3) return '';
         const year = parseInt(parts[0], 10);
         const month = parseInt(parts[1], 10) - 1;
@@ -42,8 +48,8 @@ export class FleetController {
         
         const y = date.getFullYear();
         const m = String(date.getMonth() + 1).padStart(2, '0');
-        const d = String(date.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        const dStr = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${dStr}`;
       };
 
       // 3. Process bookings and assign them to drivers

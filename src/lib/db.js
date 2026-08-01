@@ -107,8 +107,21 @@ export async function initDb() {
         driver_name VARCHAR(100) NOT NULL,
         driver_phone VARCHAR(50) NOT NULL,
         vehicle_number VARCHAR(50),
-        vehicle_model VARCHAR(50)
+        vehicle_model VARCHAR(50),
+        vehicle_owner VARCHAR(100)
       );
+      ALTER TABLE drivers_registry ADD COLUMN IF NOT EXISTS vehicle_owner VARCHAR(100);
+
+      -- Migration: Upgrade existing leads with driver assignments to 'assigned' status
+      UPDATE leads 
+      SET status = 'assigned' 
+      WHERE status IN ('new', 'quoted', 'converted') 
+        AND id IN (
+          SELECT DISTINCT i.lead_id 
+          FROM itinerary_days id_day 
+          JOIN itineraries i ON id_day.itinerary_id = i.id 
+          WHERE id_day.driver_id IS NOT NULL
+        );
     `);
 
     // 5. Itineraries
@@ -262,7 +275,7 @@ export async function initDb() {
       const hashedAdminPassword = await bcrypt.hash('admin123', 10);
       await client.query(`
         INSERT INTO admins (username, password, name)
-        VALUES ('admin', $1, 'VaniTravels Owner')
+        VALUES ('admin', $1, 'Sandesh Travels Owner')
       `, [hashedAdminPassword]);
       console.log('Seeded default admin owner.');
     }

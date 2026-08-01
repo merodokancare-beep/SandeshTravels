@@ -45,10 +45,8 @@ export default function AdminLogin() {
     <div className="login-wrapper">
       <div className="login-card animate-fade-in" id="admin-login-card">
         <div className="login-header">
-          <div className="logo" id="admin-logo" style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}>
-            <i className="fa-solid fa-user-gear"></i>
-          </div>
-          <h1 id="admin-login-title">VaniTravels</h1>
+          <img src="/logo.png" alt="Sandesh Travels" style={{ height: '70px', objectFit: 'contain', background: '#fff', borderRadius: '10px', padding: '4px 10px', marginBottom: '0.75rem' }} />
+          <h1 id="admin-login-title">Sandesh Travels</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
             Travel Agency Owner Portal
           </p>

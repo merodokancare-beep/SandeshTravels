@@ -46,6 +46,8 @@ export default function AdminDashboard() {
   const [driverPhone, setDriverPhone] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
+  const [vehicleOwner, setVehicleOwner] = useState('');
+  const [isDriverOwner, setIsDriverOwner] = useState(false);
   const [editingDriver, setEditingDriver] = useState(null);
 
   // Book Enquiry Modal states
@@ -58,6 +60,8 @@ export default function AdminDashboard() {
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
   const [newLeadStartDate, setNewLeadStartDate] = useState('');
   const [newLeadTemplateId, setNewLeadTemplateId] = useState('');
+  const [selectedWalkInTemplateIds, setSelectedWalkInTemplateIds] = useState([]);
+  const [isWalkInMultiDropdownOpen, setIsWalkInMultiDropdownOpen] = useState(false);
   const [newLeadPartnerId, setNewLeadPartnerId] = useState('');
 
   // Template CRUD form states
@@ -118,7 +122,7 @@ export default function AdminDashboard() {
       const trackingData = await trackingRes.json();
       setJourneys(trackingData.journeys || []);
 
-      setAdmin({ name: 'VaniTravels Admin', username: 'admin' });
+      setAdmin({ name: 'Sandesh Travels Admin', username: 'admin' });
     } catch (err) {
       console.error('Fetch admin dashboard error:', err);
       setError('Could not load portal data. Check database settings.');
@@ -134,7 +138,8 @@ export default function AdminDashboard() {
   const getJourneyTimelineStatus = (lead, itinerary) => {
     if (!lead.start_date || !itinerary) return { status: 'Unknown', dayNumber: 0, percent: 0, text: 'No schedule' };
     
-    const parts = lead.start_date.substring(0, 10).split('-');
+    const cleanDateStr = parseLocalDateString(lead.start_date);
+    const parts = cleanDateStr.split('-');
     if (parts.length !== 3) return { status: 'Unknown', dayNumber: 0, percent: 0, text: 'Invalid date' };
     const startDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
     
@@ -184,7 +189,7 @@ export default function AdminDashboard() {
     const hasDriver = !!assignedDayWithDriver.driver_name;
     
     if (!hasDriver) {
-      let message = `Hi ${j.lead.client_name}, your upcoming VaniTravels booking is confirmed! 🚗✨\n\n`;
+      let message = `Hi ${j.lead.client_name}, your upcoming Sandesh Travels booking is confirmed! 🚗✨\n\n`;
       message += `• Route: ${j.itinerary.title}\n`;
       message += `• Driver & Vehicle details are being finalized. We will notify you as soon as they are assigned.\n\n`;
       message += `You can view your day-by-day program details here:\n👉 ${guestItineraryUrl}`;
@@ -192,7 +197,7 @@ export default function AdminDashboard() {
       return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
     }
 
-    let message = `Hi ${j.lead.client_name}, here are the Driver & Vehicle details for your upcoming VaniTravels journey: 🚗✨\n\n`;
+    let message = `Hi ${j.lead.client_name}, here are the Driver & Vehicle details for your upcoming Sandesh Travels journey: 🚗✨\n\n`;
     message += `• Driver Name: ${assignedDayWithDriver.driver_name}\n`;
     message += `• Driver Contact: ${assignedDayWithDriver.driver_phone}\n`;
     message += `• Vehicle: ${assignedDayWithDriver.vehicle_model} (${assignedDayWithDriver.vehicle_number || 'N/A'})\n\n`;
@@ -202,9 +207,22 @@ export default function AdminDashboard() {
     return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
   };
 
+  const parseLocalDateString = (dateInput) => {
+    if (!dateInput) return '';
+    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (!isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+    return String(dateInput).substring(0, 10);
+  };
+
   const getIsoDateForDay = (startDateStr, dayNum) => {
     if (!startDateStr) return '';
-    const parts = String(startDateStr).substring(0, 10).split('-');
+    const cleanDateStr = parseLocalDateString(startDateStr);
+    const parts = cleanDateStr.split('-');
     if (parts.length !== 3) return '';
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1;
@@ -214,14 +232,14 @@ export default function AdminDashboard() {
     
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
+    const dStr = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dStr}`;
   };
 
   const isDriverFreeOnDate = (d, leadId, startDate, dayNumber) => {
     if (!startDate) return true;
     const targetDateStr = getIsoDateForDay(startDate, dayNumber);
-    const hasConflict = d.bookings?.some(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && b.lead_status === 'converted');
+    const hasConflict = d.bookings?.some(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
     return !hasConflict;
   };
 
@@ -230,7 +248,7 @@ export default function AdminDashboard() {
     if (!startDate) return defaultText;
     
     const targetDateStr = getIsoDateForDay(startDate, dayNumber);
-    const booking = d.bookings?.find(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && b.lead_status === 'converted');
+    const booking = d.bookings?.find(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
     if (booking) {
       return `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${booking.client_name}`;
     }
@@ -254,7 +272,7 @@ export default function AdminDashboard() {
     const conflictingDates = [];
     for (let i = 1; i <= totalDays; i++) {
       const targetDateStr = getIsoDateForDay(startDate, i);
-      const booking = d.bookings?.find(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && b.lead_status === 'converted');
+      const booking = d.bookings?.find(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
       if (booking && !conflictingDates.includes(booking.client_name)) {
         conflictingDates.push(booking.client_name);
       }
@@ -322,8 +340,8 @@ export default function AdminDashboard() {
       ? fleetStartDates[itinId]
       : (lead.start_date ? String(lead.start_date).substring(0, 10) : '');
 
-    // Frontend validation: Start date must be greater than or equal to converted_at / created_at date
-    if (selectedStartDate) {
+    // Frontend validation: Start date check for new unconfirmed leads only
+    if (selectedStartDate && !lead.start_date && lead.status !== 'converted' && lead.status !== 'assigned') {
       const limitDateStr = lead.converted_at || lead.created_at;
       if (limitDateStr) {
         const limitDate = new Date(limitDateStr);
@@ -364,7 +382,7 @@ export default function AdminDashboard() {
         const d = fleet.find(drv => String(drv.id) === String(item.driverId));
         if (d && d.bookings) {
           const targetDateStr = getIsoDateForDay(selectedStartDate, item.dayNumber);
-          const conflict = d.bookings.find(b => b.date === targetDateStr && String(b.lead_id) !== String(lead.id) && b.lead_status === 'converted');
+          const conflict = d.bookings.find(b => b.date === targetDateStr && String(b.lead_id) !== String(lead.id) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
           if (conflict && !conflictNames.includes(d.driver_name)) {
             conflictFound = true;
             conflictNames.push(d.driver_name);
@@ -396,8 +414,10 @@ export default function AdminDashboard() {
         setSuccess(`Fleet successfully assigned to the itinerary for "${lead.client_name}".`);
         await fetchDashboardData();
         
-        // Trigger background notification
-        await handleTriggerBackgroundWhatsApp(lead.id, itinId, channel);
+        // Trigger background notification if channel specified
+        if (channel) {
+          await handleTriggerBackgroundWhatsApp(lead.id, itinId, channel);
+        }
       } else {
         const data = await res.json();
         setError(data.error || 'Failed to save fleet assignment.');
@@ -488,7 +508,8 @@ export default function AdminDashboard() {
         driverName,
         driverPhone,
         vehicleNumber,
-        vehicleModel
+        vehicleModel,
+        vehicleOwner
       };
       if (editingDriver) {
         body.id = editingDriver.id;
@@ -506,6 +527,8 @@ export default function AdminDashboard() {
         setDriverPhone('');
         setVehicleNumber('');
         setVehicleModel('');
+        setVehicleOwner('');
+        setIsDriverOwner(false);
         setEditingDriver(null);
         fetchDashboardData();
       } else {
@@ -525,6 +548,9 @@ export default function AdminDashboard() {
     setDriverPhone(d.driver_phone || '');
     setVehicleNumber(d.vehicle_number || '');
     setVehicleModel(d.vehicle_model || '');
+    setVehicleOwner(d.vehicle_owner || '');
+    const isSelf = d.vehicle_owner && (d.vehicle_owner.includes('Self-Owned') || d.vehicle_owner === d.driver_name);
+    setIsDriverOwner(!!isSelf);
     const driverForm = document.getElementById('driver-form-section');
     if (driverForm) {
       driverForm.scrollIntoView({ behavior: 'smooth' });
@@ -537,6 +563,8 @@ export default function AdminDashboard() {
     setDriverPhone('');
     setVehicleNumber('');
     setVehicleModel('');
+    setVehicleOwner('');
+    setIsDriverOwner(false);
   };
 
   const handleDeleteDriver = async (id, name) => {
@@ -727,6 +755,7 @@ export default function AdminDashboard() {
           numTravelers: newLeadTravelers,
           startDate: newLeadStartDate || null,
           templateId: newLeadTemplateId || null,
+          templateIds: selectedWalkInTemplateIds,
           partnerId: newLeadPartnerId || null
         })
       });
@@ -741,13 +770,15 @@ export default function AdminDashboard() {
         setNewLeadTravelers(1);
         setNewLeadStartDate('');
         setNewLeadTemplateId('');
+        setSelectedWalkInTemplateIds([]);
+        setIsWalkInMultiDropdownOpen(false);
         setNewLeadPartnerId('');
         setShowBookModal(false);
         
         await fetchDashboardData();
 
-        // If template selected, send directly to itinerary builder
-        if (newLeadTemplateId) {
+        // If templates selected, send directly to itinerary builder
+        if (selectedWalkInTemplateIds.length > 0 || newLeadTemplateId) {
           router.push(`/admin/itinerary/${data.lead.id}`);
         }
       } else {
@@ -850,11 +881,12 @@ export default function AdminDashboard() {
       {/* Sidebar navigation */}
       <aside className="sidebar" style={{ borderRight: '1px solid rgba(255,255,255,0.06)' }}>
         <div>
-          <div className="brand-section">
-            <div className="brand-logo" style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}>
-              <i className="fa-solid fa-route"></i>
+          <div className="brand-section" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <img src="/logo.png" alt="Sandesh Travels" style={{ height: '40px', objectFit: 'contain', background: '#fff', borderRadius: '6px', padding: '2px 6px' }} />
+            <div>
+              <div className="brand-name" style={{ fontSize: '1.1rem', fontWeight: 800 }}>Sandesh Travels</div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>Tours & Travel Company</div>
             </div>
-            <div className="brand-name">VaniTravels</div>
           </div>
           <nav className="nav-menu">
             <button 
@@ -1033,7 +1065,7 @@ export default function AdminDashboard() {
                 </div>
                 <div className="stat-info">
                   <div className="stat-value">{convertedLeads}</div>
-                  <div className="stat-label">Converted Journeys</div>
+                  <div className="stat-label">Confirmed Journeys</div>
                 </div>
               </div>
             </>
@@ -1066,6 +1098,7 @@ export default function AdminDashboard() {
                   <option value="new">New</option>
                   <option value="quoted">Quoted</option>
                   <option value="converted">Converted</option>
+                  <option value="assigned">Fleet Assigned</option>
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
@@ -1123,28 +1156,43 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span className={`badge badge-${lead.status}`}>{lead.status}</span>
-                            {lead.status !== 'completed' && (
-                              <select
-                                value={lead.status}
-                                onChange={(e) => handleStatusChange(lead.id, e.target.value)}
-                                disabled={actionLoading}
-                                style={{ 
-                                  background: 'var(--bg-surface-elevated)', 
-                                  border: '1px solid var(--border)',
-                                  color: 'var(--text-primary)',
-                                  borderRadius: '4px',
-                                  padding: '0.2rem',
-                                  fontSize: '0.8rem'
-                                }}
-                              >
-                                <option value="new">New</option>
-                                <option value="quoted">Quoted</option>
-                                <option value="converted">Converted</option>
-                                <option value="completed">Completed</option>
-                                <option value="cancelled">Cancelled</option>
-                              </select>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <span className={`badge badge-${lead.status}`}>
+                                {lead.status === 'assigned' ? 'FLEET ASSIGNED' : lead.status === 'converted' ? 'CONVERTED' : lead.status}
+                              </span>
+                              {lead.status !== 'completed' && (
+                                <select
+                                  value={lead.status}
+                                  onChange={(e) => handleStatusChange(lead.id, e.target.value)}
+                                  disabled={actionLoading}
+                                  style={{ 
+                                    background: 'var(--bg-surface-elevated)', 
+                                    border: '1px solid var(--border)',
+                                    color: 'var(--text-primary)',
+                                    borderRadius: '4px',
+                                    padding: '0.2rem',
+                                    fontSize: '0.8rem'
+                                  }}
+                                >
+                                  <option value="new" disabled={lead.status === 'assigned' || lead.status === 'completed'}>New</option>
+                                  <option value="quoted" disabled={lead.status === 'assigned' || lead.status === 'completed'}>Quoted</option>
+                                  <option value="converted" disabled={lead.status === 'assigned' || lead.status === 'completed'}>Converted</option>
+                                  <option value="assigned">Fleet Assigned</option>
+                                  <option value="completed">Completed</option>
+                                  <option value="cancelled">Cancelled</option>
+                                </select>
+                              )}
+                            </div>
+                            {lead.status === 'converted' && (
+                              <div style={{ fontSize: '0.75rem', color: '#FBBF24', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <i className="fa-solid fa-clock"></i> Pending Fleet Assignment
+                              </div>
+                            )}
+                            {lead.status === 'assigned' && (
+                              <div style={{ fontSize: '0.75rem', color: '#38bdf8', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <i className="fa-solid fa-circle-check"></i> Fleet Dispatched
+                              </div>
                             )}
                           </div>
                         </td>
@@ -1153,16 +1201,64 @@ export default function AdminDashboard() {
                             {(lead.status === 'new' || lead.status === 'quoted') && (
                               <Link 
                                 href={`/admin/itinerary/${lead.id}`} 
-                                className="btn btn-secondary"
-                                style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                                className="btn btn-primary"
+                                style={{ 
+                                  padding: '0.4rem 0.75rem', 
+                                  fontSize: '0.8rem', 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.35rem', 
+                                  whiteSpace: 'nowrap',
+                                  fontWeight: '600'
+                                }}
                               >
-                                <i className="fa-solid fa-compass" style={{ color: 'var(--primary)' }}></i> Itinerary Builder
+                                <i className="fa-solid fa-wand-magic-sparkles"></i> Build Itinerary
                               </Link>
                             )}
 
-                            {(lead.status === 'converted' || lead.status === 'completed') && (
+                            {lead.status === 'converted' && (
+                              <>
+                                <Link 
+                                  href={`/admin/itinerary/${lead.id}`} 
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.65rem', fontSize: '0.8rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                                >
+                                  <i className="fa-solid fa-pen-to-square"></i> Edit Itinerary
+                                </Link>
+                                <button 
+                                  type="button"
+                                  onClick={() => setActiveTab('dispatch')}
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.65rem', fontSize: '0.8rem', color: '#FBBF24', borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                                >
+                                  <i className="fa-solid fa-car"></i> Fleet Assignment
+                                </button>
+                              </>
+                            )}
+
+                            {(lead.status === 'assigned' || lead.status === 'completed') && (
+                              <Link 
+                                href={`/admin/itinerary/${lead.id}`} 
+                                className="btn btn-secondary"
+                                style={{ 
+                                  padding: '0.4rem 0.6rem', 
+                                  fontSize: '0.8rem', 
+                                  color: 'var(--text-secondary)', 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.3rem', 
+                                  whiteSpace: 'nowrap' 
+                                }}
+                              >
+                                <i className="fa-solid fa-eye"></i> View Program
+                              </Link>
+                            )}
+
+                            {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
                               <Link 
                                 href={`/admin/invoice/${lead.id}`} 
+                                target="_blank"
+                                rel="noopener noreferrer"
                                 className="btn btn-secondary"
                                 style={{ 
                                   padding: '0.4rem 0.6rem', 
@@ -1245,7 +1341,7 @@ export default function AdminDashboard() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                   <div style={{ width: '12px', height: '12px', borderRadius: '4px', background: 'var(--secondary)' }}></div>
-                  <span style={{ color: 'var(--text-secondary)' }}>Converted (Confirmed)</span>
+                  <span style={{ color: 'var(--text-secondary)' }}>Confirmed (Booked)</span>
                 </div>
               </div>
             </div>
@@ -1295,12 +1391,12 @@ export default function AdminDashboard() {
                             {todayBooking ? (
                               <div style={{
                                 padding: '0.5rem',
-                                background: todayBooking.lead_status === 'converted' ? 'rgba(99,102,241,0.1)' : 'rgba(245,158,11,0.1)',
-                                border: todayBooking.lead_status === 'converted' ? '1px solid rgba(99,102,241,0.2)' : '1px solid rgba(245,158,11,0.2)',
+                                background: (todayBooking.lead_status === 'converted' || todayBooking.lead_status === 'assigned') ? 'rgba(99,102,241,0.1)' : 'rgba(245,158,11,0.1)',
+                                border: (todayBooking.lead_status === 'converted' || todayBooking.lead_status === 'assigned') ? '1px solid rgba(99,102,241,0.2)' : '1px solid rgba(245,158,11,0.2)',
                                 borderRadius: '6px',
                                 fontSize: '0.8rem'
                               }}>
-                                <div style={{ fontWeight: '600', color: todayBooking.lead_status === 'converted' ? '#A5B4FC' : '#FBBF24', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <div style={{ fontWeight: '600', color: (todayBooking.lead_status === 'converted' || todayBooking.lead_status === 'assigned') ? '#A5B4FC' : '#FBBF24', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                                   <i className="fa-solid fa-route"></i> ON WORK
                                 </div>
                                 <div style={{ color: '#FFF', fontSize: '0.75rem', marginTop: '0.15rem' }}>Guest: {todayBooking.client_name}</div>
@@ -1343,7 +1439,7 @@ export default function AdminDashboard() {
                                   <div 
                                     className="animate-fade-in"
                                     style={{
-                                      background: booking.lead_status === 'converted' ? 'var(--secondary)' : 'var(--accent-orange)',
+                                      background: (booking.lead_status === 'converted' || booking.lead_status === 'assigned') ? 'var(--secondary)' : 'var(--accent-orange)',
                                       color: '#FFF',
                                       fontSize: '0.7rem',
                                       padding: '0.4rem 0.25rem',
@@ -1398,7 +1494,7 @@ export default function AdminDashboard() {
               };
 
               const cleanGuestPhone = activeCellDetails.client_phone.replace(/\D/g, '');
-              const guestWhatsAppUrl = `https://api.whatsapp.com/send?phone=${cleanGuestPhone}&text=${encodeURIComponent(`Hi ${activeCellDetails.client_name}, this is VaniTravels contacting you regarding your ongoing transport booking.`)}`;
+              const guestWhatsAppUrl = `https://api.whatsapp.com/send?phone=${cleanGuestPhone}&text=${encodeURIComponent(`Hi ${activeCellDetails.client_name}, this is Sandesh Travels contacting you regarding your ongoing transport booking.`)}`;
 
               return (
                 <div 
@@ -1504,7 +1600,7 @@ export default function AdminDashboard() {
                     if (cat === 'completed') {
                       return j.lead.status === 'completed' || info.status === 'completed';
                     }
-                    return j.lead.status === 'converted' && info.status === cat;
+                    return info.status === cat;
                   });
 
                   const categoryTitle = 
@@ -1597,7 +1693,7 @@ export default function AdminDashboard() {
                                           <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{todayDetails.vehicle_model}</div>
                                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayDetails.vehicle_number}</div>
                                           <a 
-                                            href={`https://wa.me/${todayDetails.driver_phone.replace(/\D/g, '')}?text=Hi%20${todayDetails.driver_name},%20this%20is%20VaniTravels%20Admin.%20Regarding%20guest%20${j.lead.client_name}...`}
+                                            href={`https://wa.me/${todayDetails.driver_phone.replace(/\D/g, '')}?text=Hi%20${todayDetails.driver_name},%20this%20is%20Sandesh%20Travels%20Admin.%20Regarding%20guest%20${j.lead.client_name}...`}
                                             target="_blank" 
                                             rel="noopener noreferrer"
                                             style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#25D366', fontSize: '0.75rem', marginTop: '0.25rem', fontWeight: '600' }}
@@ -1629,27 +1725,27 @@ export default function AdminDashboard() {
                               )}
 
                               <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
-                                {j.lead.status === 'converted' && (
-                                  <button 
-                                    className="btn btn-secondary"
-                                    disabled={actionLoading}
-                                    onClick={() => handleStatusChange(j.lead.id, 'completed')}
-                                    style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.8rem', background: 'rgba(16,185,129,0.1)', color: '#34D399', border: '1px solid rgba(16,185,129,0.2)' }}
-                                  >
-                                    <i className="fa-solid fa-circle-check"></i> Complete Journey
-                                  </button>
-                                )}
-                                {(j.lead.status === 'new' || j.lead.status === 'quoted') && (
-                                  <Link
-                                    href={`/admin/itinerary/${j.lead.id}`}
-                                    className="btn btn-secondary"
-                                    style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.8rem', textAlign: 'center' }}
-                                  >
-                                    <i className="fa-solid fa-sliders"></i> Edit Itinerary
-                                  </Link>
-                                )}
+                                <Link
+                                   href={`/admin/itinerary/${j.lead.id}`}
+                                   className="btn btn-secondary"
+                                   style={{ 
+                                     flexGrow: 1, 
+                                     padding: '0.4rem', 
+                                     fontSize: '0.8rem', 
+                                     color: '#FFF', 
+                                     display: 'inline-flex', 
+                                     alignItems: 'center', 
+                                     justifyContent: 'center', 
+                                     gap: '0.35rem',
+                                     fontWeight: '600' 
+                                   }}
+                                 >
+                                   <i className="fa-solid fa-eye"></i> View Journey Details
+                                 </Link>
                                 <Link
                                   href={`/admin/invoice/${j.lead.id}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
                                   className="btn btn-secondary"
                                   style={{ 
                                     padding: '0.4rem 0.6rem', 
@@ -1706,7 +1802,7 @@ export default function AdminDashboard() {
               <div>
                 <h2>Fleet Assignment Dashboard</h2>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  Assign drivers and vehicles to converted traveler itineraries, then notify them directly on WhatsApp.
+                  Assign drivers and vehicles to confirmed traveler itineraries, then notify them directly on WhatsApp.
                 </p>
               </div>
               <button className="btn btn-secondary" onClick={() => fetchDashboardData()}>
@@ -1716,7 +1812,7 @@ export default function AdminDashboard() {
 
             {(() => {
               const pending = journeys.filter(j => j.lead.status === 'converted' && !j.days.some(d => d.driver_id !== null));
-              const assigned = journeys.filter(j => j.lead.status === 'converted' && j.days.some(d => d.driver_id !== null));
+              const assigned = journeys.filter(j => (j.lead.status === 'assigned' || j.days.some(d => d.driver_id !== null)) && j.lead.status !== 'completed');
 
               return (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
@@ -1725,7 +1821,7 @@ export default function AdminDashboard() {
                       ⚠️ Pending Assignment ({pending.length})
                     </h3>
                     {pending.length === 0 ? (
-                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic', padding: '1rem' }}>No pending assignments! All converted leads have drivers assigned.</p>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', fontStyle: 'italic', padding: '1rem' }}>No pending assignments! All confirmed bookings have drivers assigned.</p>
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {pending.map(j => {
@@ -1887,6 +1983,32 @@ export default function AdminDashboard() {
                                 </div>
                               </div>
 
+                              {/* Quick Reassign Driver to all days */}
+                              <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1.25rem', background: 'var(--bg-surface)', padding: '0.75rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border)' }}>
+                                <span style={{ fontSize: '0.8rem', color: '#FFF', fontWeight: '600' }}>Reassign Driver to all days:</span>
+                                <select 
+                                  className="form-control"
+                                  style={{ width: '250px', fontSize: '0.8rem', padding: '0.3rem' }}
+                                  value=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleQuickAssignDriver(j.itinerary.id, e.target.value, j.itinerary.total_days);
+                                      e.target.value = "";
+                                    }
+                                  }}
+                                >
+                                  <option value="">-- Select Driver to Reassign --</option>
+                                  {fleet
+                                    .filter(d => isDriverFreeForEntireJourney(d, j.lead.id, selectedStartDate, j.itinerary.total_days))
+                                    .map(d => (
+                                      <option key={d.id} value={d.id}>
+                                        {d.driver_name} ({d.vehicle_model || 'No Vehicle'} - {d.vehicle_number || 'N/A'})
+                                      </option>
+                                    ))
+                                  }
+                                </select>
+                              </div>
+
                               {/* Days map */}
                               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
                                 {j.days.map(day => {
@@ -1919,15 +2041,15 @@ export default function AdminDashboard() {
                                 })}
                               </div>
 
-                               <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
-                                 <button 
-                                   className="btn btn-secondary"
-                                   style={{ flexGrow: 1, padding: '0.5rem', fontSize: '0.8rem' }}
-                                   onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days)}
-                                   disabled={actionLoading}
-                                 >
-                                   <i className="fa-solid fa-floppy-disk"></i> Update
-                                 </button>
+                              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', width: '100%' }}>
+                                <button 
+                                  className="btn btn-primary"
+                                  style={{ flexGrow: 1, padding: '0.5rem', fontSize: '0.8rem', fontWeight: '600' }}
+                                  onClick={() => handleSaveFleet(j.itinerary.id, j.lead, j.itinerary, j.days)}
+                                  disabled={actionLoading}
+                                >
+                                  <i className="fa-solid fa-floppy-disk"></i> Save Driver Reassignment
+                                </button>
                                  <button 
                                     onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id, 'whatsapp')}
                                     className="btn btn-primary"
@@ -2065,7 +2187,13 @@ export default function AdminDashboard() {
                     className="form-control"
                     placeholder="e.g. Ramesh Thapa"
                     value={driverName}
-                    onChange={(e) => setDriverName(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setDriverName(val);
+                      if (isDriverOwner) {
+                        setVehicleOwner(val ? `${val} (Self-Owned)` : '');
+                      }
+                    }}
                     required
                   />
                 </div>
@@ -2104,6 +2232,37 @@ export default function AdminDashboard() {
                       onChange={(e) => setVehicleModel(e.target.value)}
                     />
                   </div>
+                </div>
+                <div className="form-group">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <label htmlFor="v-owner" style={{ margin: 0 }}>Vehicle Owner / Vendor</label>
+                    <label style={{ fontSize: '0.8rem', color: '#38bdf8', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', userSelect: 'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={isDriverOwner}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setIsDriverOwner(checked);
+                          if (checked) {
+                            setVehicleOwner(driverName ? `${driverName} (Self-Owned)` : 'Self-Owned');
+                          }
+                        }}
+                        style={{ cursor: 'pointer', accentColor: 'var(--primary)', width: '15px', height: '15px' }}
+                      />
+                      <span>Driver is Owner (Self-Owned)</span>
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    id="v-owner"
+                    className="form-control"
+                    placeholder="e.g. Himalayan Travels / Owner Name"
+                    value={vehicleOwner}
+                    onChange={(e) => {
+                      setVehicleOwner(e.target.value);
+                      if (isDriverOwner) setIsDriverOwner(false);
+                    }}
+                  />
                 </div>
                 <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
                   {editingDriver && (
@@ -2159,6 +2318,11 @@ export default function AdminDashboard() {
                           <td>
                             <div>{d.vehicle_model || 'N/A'}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                            {d.vehicle_owner && (
+                              <div style={{ fontSize: '0.75rem', color: '#38bdf8', marginTop: '0.15rem' }}>
+                                <i className="fa-solid fa-building-user" style={{ marginRight: '0.3rem' }}></i> {d.vehicle_owner}
+                              </div>
+                            )}
                           </td>
                           <td>
                             <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
@@ -2430,27 +2594,148 @@ export default function AdminDashboard() {
                     </button>
                   ))}
                 </div>
-
-                <label>Region/Route Package Blueprint (Optional selection)</label>
-                <select 
-                  className="form-control"
-                  value={newLeadTemplateId}
-                  onChange={(e) => setNewLeadTemplateId(e.target.value)}
-                >
-                  <option value="">-- Custom Blank Itinerary (No pre-population) --</option>
-                  {templates
-                    .filter(t => bookModalTemplateRegion === 'All' || t.region.toLowerCase() === bookModalTemplateRegion.toLowerCase())
-                    .map(t => (
-                      <option key={t.id} value={t.id}>
-                        [{t.region}] {t.name} (Rs. {t.estimated_price})
-                      </option>
-                    ))
-                  }
-                </select>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                  Selecting a template automatically populates the itinerary title, days, and day-by-day sightseeing descriptions.
-                </span>
               </div>
+
+              <div className="form-group" style={{ position: 'relative' }}>
+                  <label style={{ fontWeight: '600', color: '#FFF' }}>
+                    Region/Route Package Blueprints (Optional Multi-Selection)
+                  </label>
+
+                  {/* Multi-Select Checkbox Dropdown Box */}
+                  <div style={{ position: 'relative', marginTop: '0.35rem' }}>
+                    <div
+                      onClick={() => setIsWalkInMultiDropdownOpen(prev => !prev)}
+                      className="form-control"
+                      style={{
+                        display: 'flex',
+                        justify: 'space-between',
+                        alignItems: 'center',
+                        cursor: 'pointer',
+                        padding: '0.55rem 0.85rem',
+                        border: '1px solid var(--border)',
+                        background: 'var(--bg-surface)',
+                        userSelect: 'none'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <i className="fa-solid fa-square-check" style={{ color: 'var(--accent-teal)' }}></i>
+                        {selectedWalkInTemplateIds.length === 0 ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-- Custom Blank Itinerary (No pre-population) --</span>
+                        ) : (
+                          <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <span style={{ color: '#FFF', fontSize: '0.85rem', fontWeight: '600' }}>
+                              {selectedWalkInTemplateIds.length} Region(s) Selected:
+                            </span>
+                            {templates
+                              .filter(t => selectedWalkInTemplateIds.includes(String(t.id)))
+                              .map(t => (
+                                <span key={t.id} className="badge" style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid #38bdf8', color: '#38bdf8', fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
+                                  [{t.region}] {t.name}
+                                </span>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                      <i className={`fa-solid fa-chevron-${isWalkInMultiDropdownOpen ? 'up' : 'down'}`} style={{ color: 'var(--text-secondary)' }}></i>
+                    </div>
+
+                    {/* Dropdown panel */}
+                    {isWalkInMultiDropdownOpen && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '105%',
+                          left: 0,
+                          right: 0,
+                          zIndex: 100,
+                          background: 'var(--bg-surface-elevated)',
+                          border: '1px solid var(--border)',
+                          borderRadius: 'var(--border-radius-sm)',
+                          boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                          padding: '0.75rem',
+                          maxHeight: '260px',
+                          overflowY: 'auto'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border)' }}>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Check regions to include:</span>
+                          <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const visibleIds = templates
+                                  .filter(t => bookModalTemplateRegion === 'All' || t.region.toLowerCase() === bookModalTemplateRegion.toLowerCase())
+                                  .map(t => String(t.id));
+                                setSelectedWalkInTemplateIds(visibleIds);
+                              }}
+                              style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedWalkInTemplateIds([])}
+                              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                          {templates
+                            .filter(t => bookModalTemplateRegion === 'All' || t.region.toLowerCase() === bookModalTemplateRegion.toLowerCase())
+                            .map(t => {
+                              const isChecked = selectedWalkInTemplateIds.includes(String(t.id));
+                              return (
+                                <label
+                                  key={t.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    padding: '0.5rem 0.75rem',
+                                    borderRadius: '6px',
+                                    background: isChecked ? 'rgba(56,189,248,0.1)' : 'var(--bg-surface)',
+                                    border: isChecked ? '1px solid rgba(56,189,248,0.3)' : '1px solid var(--border)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.82rem'
+                                  }}
+                                >
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedWalkInTemplateIds(prev => [...prev, String(t.id)]);
+                                        } else {
+                                          setSelectedWalkInTemplateIds(prev => prev.filter(id => id !== String(t.id)));
+                                        }
+                                      }}
+                                      style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                                    />
+                                    <span style={{ fontWeight: isChecked ? '600' : 'normal', color: '#FFF' }}>
+                                      <strong style={{ color: 'var(--accent-teal)', marginRight: '0.4rem' }}>[{t.region}]</strong>
+                                      {t.name}
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                    {t.total_days} Days • Rs. {t.estimated_price}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'block' }}>
+                    Check multiple regional blueprints to merge them into a single multi-region itinerary for this guest.
+                  </span>
+                </div>
 
               <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
                 <button 

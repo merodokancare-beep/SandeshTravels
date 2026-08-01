@@ -21,7 +21,7 @@ export default function AcceptQuotationButton({ itineraryId, initialStatus }) {
       const data = await res.json();
       if (res.ok) {
         setStatus('converted');
-        setSuccess('Thank you! You have accepted the quotation. VaniTravels admin has been notified, and your driver and vehicle are now locked in.');
+        setSuccess('Thank you! You have accepted the quotation. Sandesh Travels admin has been notified, and your driver and vehicle are now locked in.');
       } else {
         setError(data.error || 'Failed to accept quotation.');
       }
@@ -47,7 +47,7 @@ export default function AcceptQuotationButton({ itineraryId, initialStatus }) {
         <i className="fa-solid fa-circle-check fa-2x" style={{ marginBottom: '0.5rem', display: 'block' }}></i>
         <strong style={{ fontSize: '1.1rem', color: '#FFF' }}>Booking Confirmed & Accepted!</strong>
         <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
-          {success || 'You have accepted this travel plan. VaniTravels operations center is coordinating your accommodation stays and transport logistics.'}
+          {success || 'You have accepted this travel plan. Sandesh Travels operations center is coordinating your accommodation stays and transport logistics.'}
         </p>
       </div>
     );
@@ -67,7 +67,7 @@ export default function AcceptQuotationButton({ itineraryId, initialStatus }) {
         <i className="fa-solid fa-circle-check fa-2x" style={{ marginBottom: '0.5rem', display: 'block' }}></i>
         <strong style={{ fontSize: '1.1rem', color: '#FFF' }}>Journey Successfully Completed!</strong>
         <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
-          This travel program is concluded. Thank you for choosing VaniTravels for your journey!
+          This travel program is concluded. Thank you for choosing Sandesh Travels for your journey!
         </p>
       </div>
     );
@@ -87,7 +87,7 @@ export default function AcceptQuotationButton({ itineraryId, initialStatus }) {
         <i className="fa-solid fa-circle-xmark fa-2x" style={{ marginBottom: '0.5rem', display: 'block' }}></i>
         <strong style={{ fontSize: '1.1rem', color: '#FFF' }}>Itinerary Cancelled</strong>
         <p style={{ fontSize: '0.9rem', marginTop: '0.5rem', color: 'var(--text-secondary)' }}>
-          This travel quotation has been cancelled. Please contact VaniTravels to generate a new package.
+          This travel quotation has been cancelled. Please contact Sandesh Travels to generate a new package.
         </p>
       </div>
     );

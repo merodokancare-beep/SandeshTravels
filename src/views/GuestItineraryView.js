@@ -29,7 +29,7 @@ function getFormattedDateForDay(startDate, dayNum) {
 
 
 export const metadata = {
-  title: "Your VaniTravels Custom Itinerary",
+  title: "Your Sandesh Travels Custom Itinerary",
   description: "View your day-by-day travel plan, accommodation stays, and transport details online.",
 };
 
@@ -75,19 +75,8 @@ export default async function GuestItinerary({ params }) {
           alignItems: 'center'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{
-              background: 'linear-gradient(135deg, var(--primary), var(--accent-teal))',
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 800
-            }}>
-              <i className="fa-solid fa-compass" style={{ color: '#FFF' }}></i>
-            </div>
-            <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>VaniTravels Portal</span>
+            <img src="/logo.png" alt="Sandesh Travels" style={{ height: '40px', objectFit: 'contain', background: '#fff', borderRadius: '6px', padding: '2px 6px' }} />
+            <span style={{ fontSize: '1.2rem', fontWeight: 800 }}>Sandesh Travels</span>
           </div>
           <div>
             <span className="badge badge-converted">Official Itinerary</span>
@@ -261,10 +250,10 @@ export default async function GuestItinerary({ params }) {
         <section className="glass-card text-center" style={{ marginTop: '4rem', padding: '2rem' }}>
           <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Need assistance during your trip?</h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-            Our operations center is active 24/7. Click below to chat with VaniTravels support instantly.
+            Our operations center is active 24/7. Click below to chat with Sandesh Travels support instantly.
           </p>
           <a 
-            href={`https://wa.me/919876543210?text=Hi%20VaniTravels,%20I%20have%20an%20inquiry%20regarding%20my%20itinerary%20(ID:%20${itineraryId})`}
+            href={`https://wa.me/919647878373?text=Hi%20Sandesh%20Travels,%20I%20have%20an%20inquiry%20regarding%20my%20itinerary%20(ID:%20${itineraryId})`}
             target="_blank" 
             rel="noopener noreferrer"
             className="btn btn-primary"
@@ -284,7 +273,7 @@ export default async function GuestItinerary({ params }) {
         marginTop: '5rem'
       }}>
         <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-          <p>© 2026 VaniTravels Portal. Day-by-day guest planner updates dynamically.</p>
+          <p>© 2026 Sandesh Travels. Day-by-day guest planner updates dynamically.</p>
         </div>
       </footer>
     </div>

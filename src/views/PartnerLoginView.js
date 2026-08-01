@@ -45,12 +45,10 @@ export default function PartnerLogin() {
     <div className="login-wrapper">
       <div className="login-card animate-fade-in" id="partner-login-card">
         <div className="login-header">
-          <div className="logo" id="partner-logo">
-            <i className="fa-solid fa-hotel"></i>
-          </div>
-          <h1 id="partner-login-title">VaniTravels</h1>
+          <img src="/logo.png" alt="Sandesh Travels" style={{ height: '70px', objectFit: 'contain', background: '#fff', borderRadius: '10px', padding: '4px 10px', marginBottom: '0.75rem' }} />
+          <h1 id="partner-login-title">Sandesh Travels</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginTop: '0.25rem' }}>
-            B2B Hotel Partner Portal
+            Driver & Hotel Partner Portal
           </p>
         </div>
 

@@ -72,6 +72,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [templates, setTemplates] = useState([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
   const [templateRegionFilter, setTemplateRegionFilter] = useState('All');
+  const [isMultiDropdownOpen, setIsMultiDropdownOpen] = useState(false);
+  const [selectedMultiTemplateIds, setSelectedMultiTemplateIds] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -322,10 +324,122 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       }));
       
       setDays(mappedDays);
-      setSelectedTemplateId(''); // reset selection state
+      setSelectedTemplateId(templateId);
       setSuccess(`Loaded preset package "${selected.name}" template. Remember to hit "Save & Publish Itinerary" below to update changes!`);
       setError('');
     }
+  };
+
+  // Append a selected region template onto the end of the existing itinerary
+  const handleAppendTemplate = (templateId) => {
+    if (!templateId) return;
+    const selected = templates.find(t => t.id === parseInt(templateId, 10));
+    if (!selected) return;
+
+    const templateDays = typeof selected.days === 'string' ? JSON.parse(selected.days) : selected.days;
+    const startDayIndex = days.length;
+    
+    const appendedDays = templateDays.map((d, idx) => ({
+      dayNumber: startDayIndex + idx + 1,
+      hotelId: '',
+      driverId: '',
+      description: d.description || '',
+      activities: d.activities || ''
+    }));
+
+    const newDays = [...days, ...appendedDays];
+    setDays(newDays);
+    setTotalDays(newDays.length);
+    setPrice(prev => (parseFloat(prev) || 0) + (parseFloat(selected.estimated_price) || 0));
+
+    if (!title || title.includes('Custom Travel Plan')) {
+      setTitle(`${selected.name} for ${lead?.client_name}`);
+    } else {
+      if (!title.toLowerCase().includes(selected.region.toLowerCase())) {
+        setTitle(`${title} & ${selected.region} Tour`);
+      }
+    }
+    setSuccess(`Appended "${selected.name}" (${selected.total_days} days) to the itinerary.`);
+    setError('');
+  };
+
+  // Combine multiple selected region templates into one unified itinerary
+  const handleCombineMultipleTemplates = (selectedIds) => {
+    if (!selectedIds || selectedIds.length === 0) return;
+    
+    const selectedTemplates = templates.filter(t => selectedIds.includes(String(t.id)));
+    if (selectedTemplates.length === 0) return;
+
+    let combinedDays = [];
+    let totalPrice = 0;
+    let regionNames = [];
+
+    selectedTemplates.forEach(t => {
+      if (!regionNames.includes(t.region)) {
+        regionNames.push(t.region);
+      }
+      totalPrice += (parseFloat(t.estimated_price) || 0);
+
+      const templateDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
+      templateDays.forEach(d => {
+        combinedDays.push({
+          dayNumber: combinedDays.length + 1,
+          hotelId: '',
+          driverId: '',
+          description: d.description || '',
+          activities: d.activities || ''
+        });
+      });
+    });
+
+    const regionsStr = regionNames.join(' & ');
+    setTitle(`${regionsStr} Multi-Region Tour for ${lead?.client_name}`);
+    setPrice(totalPrice);
+    setTotalDays(combinedDays.length);
+    setDays(combinedDays);
+    setSuccess(`Combined ${selectedTemplates.length} regional templates (${combinedDays.length} days total) for ${lead?.client_name}!`);
+    setError('');
+  };
+
+  // Append multiple selected region templates onto end of current itinerary
+  const handleAppendMultipleTemplates = (selectedIds) => {
+    if (!selectedIds || selectedIds.length === 0) return;
+    const selectedTemplates = templates.filter(t => selectedIds.includes(String(t.id)));
+    if (selectedTemplates.length === 0) return;
+
+    let currentDays = [...days];
+    let totalPrice = parseFloat(price) || 0;
+    let addedRegions = [];
+
+    selectedTemplates.forEach(t => {
+      if (!addedRegions.includes(t.region)) {
+        addedRegions.push(t.region);
+      }
+      totalPrice += (parseFloat(t.estimated_price) || 0);
+
+      const templateDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
+      templateDays.forEach(d => {
+        currentDays.push({
+          dayNumber: currentDays.length + 1,
+          hotelId: '',
+          driverId: '',
+          description: d.description || '',
+          activities: d.activities || ''
+        });
+      });
+    });
+
+    setDays(currentDays);
+    setTotalDays(currentDays.length);
+    setPrice(totalPrice);
+
+    if (!title || title.includes('Custom Travel Plan')) {
+      setTitle(`${addedRegions.join(' & ')} Tour for ${lead?.client_name}`);
+    } else {
+      setTitle(`${title} + ${addedRegions.join(' & ')}`);
+    }
+    setSuccess(`Appended ${selectedTemplates.length} regional templates (${currentDays.length} total days) to itinerary.`);
+    setError('');
   };
 
   const handleSaveGuestDetails = async () => {
@@ -393,13 +507,13 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     }
 
     // Strict conflict block for confirmed journeys
-    if (lead && (lead.status === 'converted' || lead.status === 'completed')) {
+    if (lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed')) {
       const hasConflict = days.some(day => {
         if (!day.driverId) return false;
         const dayDateStr = getIsoDateForDay(startDate, day.dayNumber);
         const d = drivers.find(drv => String(drv.id) === String(day.driverId));
         if (!d) return false;
-        return d.bookings?.some(b => b.date === dayDateStr && String(b.lead_id) !== String(leadId) && b.lead_status === 'converted');
+        return d.bookings?.some(b => b.date === dayDateStr && String(b.lead_id) !== String(leadId) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
       });
 
       if (hasConflict) {
@@ -461,7 +575,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : 'Flexible';
         
-      text = `Hi ${lead.client_name}, your booking with VaniTravels is confirmed! 🚗✨\n\n`;
+      text = `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n`;
       text += `*JOURNEY DETAILS:*\n`;
       text += `• Route: ${title}\n`;
       text += `• Start Date: ${formattedStartDate}\n`;
@@ -471,10 +585,10 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       text += `• Driver Name: ${driver.driver_name}\n`;
       text += `• Driver Contact: ${driver.driver_phone}\n`;
       text += `• Vehicle: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\n`;
-      text += `Please click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing VaniTravels!`;
+      text += `Please click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
     } else {
       // Default quotation message
-      text = `Hi ${lead.client_name}, this is VaniTravels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
+      text = `Hi ${lead.client_name}, this is Sandesh Travels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
     }
     
     // Clean phone number (remove all non-digits)
@@ -528,9 +642,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
               >
                 <i className="fa-solid fa-eye" style={{ color: 'var(--primary)' }}></i> Preview Plan
               </a>
-              {lead && (lead.status === 'converted' || lead.status === 'completed') && (
+              {lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
                 <Link 
                   href={`/admin/invoice/${lead.id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="btn btn-secondary"
                   style={{ 
                     borderColor: '#38bdf8', 
@@ -556,7 +672,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
               >
                 <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
               </a>
-              {lead && (lead.status === 'converted' || lead.status === 'completed') && days.some(d => d.driverId) ? (
+              {lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && days.some(d => d.driverId) ? (
                 <>
                   <button 
                     onClick={() => handleSendNotification('whatsapp')}
@@ -603,6 +719,27 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       {/* Main planner grid */}
       <main className="main-content" style={{ flexGrow: 1, padding: '2rem 2.5rem' }}>
         
+        {/* Lead Status Info Banners */}
+        {lead && lead.status === 'converted' && (
+          <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#FBBF24', padding: '0.85rem 1.25rem', borderRadius: '12px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+            <i className="fa-solid fa-clock fa-xl"></i>
+            <div>
+              <strong style={{ fontSize: '0.95rem' }}>Lead Status: CONVERTED (Booking Confirmed — Pending Fleet Assignment)</strong>
+              <div style={{ fontSize: '0.82rem', opacity: 0.9, marginTop: '0.15rem' }}>Traveler has confirmed the booking. Assign drivers to each day below and click "Save Itinerary" to auto-transition status to <strong>FLEET ASSIGNED</strong>.</div>
+            </div>
+          </div>
+        )}
+
+        {lead && lead.status === 'assigned' && (
+          <div style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', padding: '0.85rem 1.25rem', borderRadius: '12px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+            <i className="fa-solid fa-circle-check fa-xl"></i>
+            <div>
+              <strong style={{ fontSize: '0.95rem' }}>Lead Status: FLEET ASSIGNED (Vehicles & Drivers Dispatched)</strong>
+              <div style={{ fontSize: '0.82rem', opacity: 0.9, marginTop: '0.15rem' }}>Fleet is assigned and journey details are ready to be shared with traveler via WhatsApp or SMS.</div>
+            </div>
+          </div>
+        )}
+
         {/* Info alerts */}
         {error && (
           <div className="error-message" style={{ marginBottom: '1.5rem' }}>
@@ -811,48 +948,221 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           {/* Right panel: Itinerary editor */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
             
-            {/* Quick Template Applicator Card */}
-            <section className="glass-card" style={{ borderLeft: '4px solid var(--accent-teal)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-                <div>
-                  <h3 style={{ fontSize: '1.05rem', color: '#FFF' }}>Apply Preset Region / Route Template</h3>
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.15rem' }}>
-                    Overwrites the current form with predefined sightseeing logs & base prices (e.g. North Tour).
-                  </p>
-                </div>
-                <div style={{ display: 'flex', gap: '0.75rem', minWidth: '340px', flexWrap: 'wrap', flexGrow: 1, justifyContent: 'flex-end' }}>
-                  <select
-                    className="form-control"
-                    value={templateRegionFilter}
-                    onChange={(e) => setTemplateRegionFilter(e.target.value)}
-                    style={{ width: '130px', border: '1px solid var(--accent-teal)' }}
-                  >
-                    <option value="All">All Regions</option>
-                    <option value="North">North</option>
-                    <option value="South">South</option>
-                    <option value="East">East</option>
-                    <option value="West">West</option>
-                    <option value="Central">Central</option>
-                  </select>
-                  <select
-                    className="form-control"
-                    value={selectedTemplateId}
-                    onChange={(e) => {
-                      setSelectedTemplateId(e.target.value);
-                      handleApplyTemplate(e.target.value);
-                    }}
-                    style={{ maxWidth: '280px', border: '1px solid var(--accent-teal)' }}
-                  >
-                    <option value="">-- Select template to load --</option>
-                    {templates
-                      .filter(t => templateRegionFilter === 'All' || t.region.toLowerCase() === templateRegionFilter.toLowerCase())
-                      .map(t => (
-                        <option key={t.id} value={t.id}>[{t.region}] {t.name} (Rs. {t.estimated_price})</option>
-                      ))
-                    }
-                  </select>
-                </div>
+            {/* Quick Multi-Select Checkbox Template Card */}
+            <section className="glass-card" style={{ borderLeft: '4px solid var(--accent-teal)', position: 'relative' }}>
+              <div>
+                <h3 style={{ fontSize: '1.05rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <i className="fa-solid fa-map-location-dot" style={{ color: 'var(--accent-teal)' }}></i>
+                  Select & Combine Regional Route Templates
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', marginTop: '0.15rem' }}>
+                  Check one or multiple region templates below to build custom multi-region tours for <strong>{lead?.client_name}</strong>.
+                </p>
               </div>
+
+              {/* Region Filter Pills */}
+              <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.85rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600', marginRight: '0.25rem' }}>Filter Region:</span>
+                {['All', 'North', 'South', 'East', 'West', 'Central'].map(reg => (
+                  <button
+                    key={reg}
+                    type="button"
+                    onClick={() => setTemplateRegionFilter(reg)}
+                    style={{
+                      padding: '0.2rem 0.6rem',
+                      fontSize: '0.75rem',
+                      borderRadius: '12px',
+                      border: templateRegionFilter === reg ? '1px solid #38bdf8' : '1px solid var(--border)',
+                      background: templateRegionFilter === reg ? 'rgba(56,189,248,0.15)' : 'var(--bg-surface-elevated)',
+                      color: templateRegionFilter === reg ? '#38bdf8' : 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      fontWeight: templateRegionFilter === reg ? '600' : 'normal'
+                    }}
+                  >
+                    {reg}
+                  </button>
+                ))}
+              </div>
+
+              {/* Multi-Select Checkbox Dropdown Box */}
+              <div style={{ position: 'relative', marginTop: '0.85rem' }}>
+                <div
+                  onClick={() => setIsMultiDropdownOpen(prev => !prev)}
+                  className="form-control"
+                  style={{
+                    display: 'flex',
+                    justify: 'space-between',
+                    alignItems: 'center',
+                    cursor: 'pointer',
+                    padding: '0.55rem 0.85rem',
+                    border: '1px solid var(--accent-teal)',
+                    background: 'var(--bg-surface-elevated)',
+                    userSelect: 'none'
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                    <i className="fa-solid fa-square-check" style={{ color: 'var(--accent-teal)' }}></i>
+                    {selectedMultiTemplateIds.length === 0 ? (
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>-- Click to select one or multiple region templates --</span>
+                    ) : (
+                      <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ color: '#FFF', fontSize: '0.85rem', fontWeight: '600' }}>
+                          {selectedMultiTemplateIds.length} Region Template(s) Selected:
+                        </span>
+                        {templates
+                          .filter(t => selectedMultiTemplateIds.includes(String(t.id)))
+                          .map(t => (
+                            <span key={t.id} className="badge" style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid #38bdf8', color: '#38bdf8', fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
+                              [{t.region}] {t.name}
+                            </span>
+                          ))
+                        }
+                      </div>
+                    )}
+                  </div>
+                  <i className={`fa-solid fa-chevron-${isMultiDropdownOpen ? 'up' : 'down'}`} style={{ color: 'var(--text-secondary)' }}></i>
+                </div>
+
+                {/* Dropdown panel */}
+                {isMultiDropdownOpen && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: '105%',
+                      left: 0,
+                      right: 0,
+                      zIndex: 100,
+                      background: 'var(--bg-surface-elevated)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--border-radius-sm)',
+                      boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+                      padding: '0.75rem',
+                      maxHeight: '280px',
+                      overflowY: 'auto'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', paddingBottom: '0.4rem', borderBottom: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontWeight: '600' }}>Check templates to combine:</span>
+                      <div style={{ display: 'flex', gap: '0.75rem', fontSize: '0.75rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const visibleIds = templates
+                              .filter(t => templateRegionFilter === 'All' || t.region.toLowerCase() === templateRegionFilter.toLowerCase())
+                              .map(t => String(t.id));
+                            setSelectedMultiTemplateIds(visibleIds);
+                          }}
+                          style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
+                        >
+                          Select All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedMultiTemplateIds([])}
+                          style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
+                        >
+                          Clear
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      {templates
+                        .filter(t => templateRegionFilter === 'All' || t.region.toLowerCase() === templateRegionFilter.toLowerCase())
+                        .map(t => {
+                          const isChecked = selectedMultiTemplateIds.includes(String(t.id));
+                          return (
+                            <label
+                              key={t.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: '6px',
+                                background: isChecked ? 'rgba(56,189,248,0.1)' : 'var(--bg-surface)',
+                                border: isChecked ? '1px solid rgba(56,189,248,0.3)' : '1px solid var(--border)',
+                                cursor: 'pointer',
+                                fontSize: '0.82rem'
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedMultiTemplateIds(prev => [...prev, String(t.id)]);
+                                    } else {
+                                      setSelectedMultiTemplateIds(prev => prev.filter(id => id !== String(t.id)));
+                                    }
+                                  }}
+                                  style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                                />
+                                <span style={{ fontWeight: isChecked ? '600' : 'normal', color: '#FFF' }}>
+                                  <strong style={{ color: 'var(--accent-teal)', marginRight: '0.4rem' }}>[{t.region}]</strong>
+                                  {t.name}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                {t.total_days} Days • Rs. {t.estimated_price}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons Bar */}
+              {selectedMultiTemplateIds.length > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.85rem', flexWrap: 'wrap', gap: '0.75rem', background: 'rgba(56,189,248,0.06)', padding: '0.75rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid rgba(56,189,248,0.2)' }}>
+                  {(() => {
+                    const selectedObjs = templates.filter(t => selectedMultiTemplateIds.includes(String(t.id)));
+                    const combinedTotalDays = selectedObjs.reduce((acc, curr) => acc + parseInt(curr.total_days || 1, 10), 0);
+                    const combinedTotalPrice = selectedObjs.reduce((acc, curr) => acc + (parseFloat(curr.estimated_price) || 0), 0);
+
+                    return (
+                      <>
+                        <div style={{ fontSize: '0.82rem' }}>
+                          <strong style={{ color: '#FFF' }}>{selectedObjs.length} Templates Selected</strong>
+                          <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
+                            Total: <strong>{combinedTotalDays} Days</strong> • Price: <strong style={{ color: 'var(--accent-teal)' }}>Rs. {combinedTotalPrice}</strong>
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            onClick={() => {
+                              handleCombineMultipleTemplates(selectedMultiTemplateIds);
+                              setIsMultiDropdownOpen(false);
+                            }}
+                            style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', fontWeight: '600' }}
+                            title="Replaces current itinerary with selected region templates"
+                          >
+                            <i className="fa-solid fa-rotate"></i> Load (Replace)
+                          </button>
+
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={() => {
+                              handleAppendMultipleTemplates(selectedMultiTemplateIds);
+                              setIsMultiDropdownOpen(false);
+                            }}
+                            style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem', fontWeight: '600' }}
+                            title="Appends selected region templates onto end of current itinerary"
+                          >
+                            <i className="fa-solid fa-plus"></i> Append Selected
+                          </button>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
             </section>
 
             <form onSubmit={handleSave} className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -918,7 +1228,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                 }}>
                   <div>
                     <strong style={{ color: '#FFF', fontSize: '0.9rem' }}>Quick Assignment Tool</strong>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assign a single driver/vehicle or hotel to all program days instantly.</p>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assign a single driver/vehicle or hotel stay to all program days instantly.</p>
                   </div>
                   <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <select
@@ -945,7 +1255,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         ))
                       }
                     </select>
-                    
+
                     <select
                       className="form-control"
                       style={{ width: '220px', fontSize: '0.85rem', padding: '0.4rem' }}
@@ -990,10 +1300,13 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         <span className="badge badge-new" style={{ textTransform: 'none' }}>Day {day.dayNumber}</span>
                       </h4>
 
-                      {/* Hotel and Driver options */}
-                      <div className="form-row" style={{ marginBottom: '1rem' }}>
+                      {/* Hotel and Driver options for every single day */}
+                      <div className="form-row" style={{ marginBottom: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                         <div className="form-group">
-                          <label>Accommodation Check-in</label>
+                          <label style={{ fontWeight: '600' }}>
+                            <i className="fa-solid fa-hotel" style={{ color: 'var(--primary)', marginRight: '0.3rem' }}></i>
+                            Accommodation Check-in
+                          </label>
                           <select
                             className="form-control"
                             value={day.hotelId}
@@ -1005,8 +1318,12 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                             ))}
                           </select>
                         </div>
+                        
                         <div className="form-group">
-                          <label>Transport Driver & Vehicle</label>
+                          <label style={{ fontWeight: '600' }}>
+                            <i className="fa-solid fa-car" style={{ color: 'var(--accent-teal)', marginRight: '0.3rem' }}></i>
+                            Transport Driver & Vehicle (Day {day.dayNumber})
+                          </label>
                           <select
                             className="form-control"
                             value={day.driverId}

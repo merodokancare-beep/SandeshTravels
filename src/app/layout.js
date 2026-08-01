@@ -1,8 +1,8 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "VaniTravels - Premium Travel Lead & Active Journey Management",
-  description: "Dynamic B2B hotel partner portals, custom itinerary building, real-time traveler tracking, and automated WhatsApp delivery.",
+  title: "Sandesh Travels - Premium Tours & Travel Company",
+  description: "Dynamic tour partner portals, custom itinerary building, real-time traveler tracking, fleet management, and automated WhatsApp delivery.",
 };
 
 export default function RootLayout({ children }) {

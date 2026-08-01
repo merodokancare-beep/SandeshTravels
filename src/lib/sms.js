@@ -1,5 +1,5 @@
 /**
- * VaniTravels Twilio SMS API Dispatcher
+ * Sandesh Travels Twilio SMS API Dispatcher
  * Integrates with Twilio SMS Messaging.
  * Uses configuration values from .env.local.
  */

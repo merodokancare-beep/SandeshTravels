@@ -58,8 +58,8 @@ export class LeadController {
 
       await client.query('BEGIN');
 
-      const updatedLead = await LeadModel.update(leadId, { clientName, clientPhone, travelDates, numTravelers, status, startDate }, client);
-      if (!updatedLead) {
+      const existingLead = await LeadModel.getById(leadId, client);
+      if (!existingLead) {
         await client.query('ROLLBACK');
         return NextResponse.json(
           { error: 'Lead not found.' },
@@ -67,8 +67,19 @@ export class LeadController {
         );
       }
 
-      // If status is converted, check for scheduling conflicts
-      if (updatedLead.status === 'converted') {
+      // Enforce status transition constraint: Once Fleet Assigned, lead cannot revert back to New, Quoted, or Converted
+      if (['new', 'quoted', 'converted'].includes(status) && (existingLead.status === 'assigned' || existingLead.status === 'completed')) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Invalid Status Transition: Once Fleet is Assigned, the lead cannot be reverted back to New, Quoted, or Converted.' },
+          { status: 400 }
+        );
+      }
+
+      const updatedLead = await LeadModel.update(leadId, { clientName, clientPhone, travelDates, numTravelers, status, startDate }, client);
+
+      // If status is converted or assigned, check for scheduling conflicts
+      if (updatedLead.status === 'converted' || updatedLead.status === 'assigned') {
         const conflicts = await LeadModel.getConflicts(leadId, client);
         if (conflicts.length > 0) {
           await client.query('ROLLBACK');
@@ -116,7 +127,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, partnerId } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -128,7 +139,11 @@ export class LeadController {
       await client.query('BEGIN');
 
       const guestsCount = parseInt(numTravelers, 10) || 1;
-      const initialStatus = templateId ? 'quoted' : 'new';
+      const targetTemplateIds = Array.isArray(templateIds) && templateIds.length > 0 
+        ? templateIds 
+        : (templateId ? [templateId] : []);
+
+      const initialStatus = targetTemplateIds.length > 0 ? 'quoted' : 'new';
       const parsedPartnerId = partnerId ? parseInt(partnerId, 10) : null;
 
       const lead = await LeadModel.create({
@@ -141,20 +156,44 @@ export class LeadController {
         startDate: startDate || null
       }, client);
 
-      // Generate itinerary if template selected
-      if (templateId) {
-        const template = await TemplateModel.getById(parseInt(templateId, 10), client);
-        if (template) {
+      // Generate itinerary if templates selected (supports multi-region)
+      if (targetTemplateIds.length > 0) {
+        let combinedDays = [];
+        let totalPrice = 0;
+        let regionNames = [];
+
+        for (const tId of targetTemplateIds) {
+          const template = await TemplateModel.getById(parseInt(tId, 10), client);
+          if (template) {
+            if (!regionNames.includes(template.region)) {
+              regionNames.push(template.region);
+            }
+            totalPrice += (parseFloat(template.estimated_price) || 0);
+
+            const templateDays = typeof template.days === 'string' ? JSON.parse(template.days) : template.days;
+            templateDays.forEach(d => {
+              combinedDays.push({
+                dayNumber: combinedDays.length + 1,
+                hotelId: null,
+                driverId: null,
+                description: d.description || '',
+                activities: d.activities || ''
+              });
+            });
+          }
+        }
+
+        if (combinedDays.length > 0) {
+          const regionsStr = regionNames.join(' & ');
           const itinerary = await ItineraryModel.create({
             leadId: lead.id,
-            title: `${template.name} for ${clientName}`,
-            price: template.estimated_price,
-            totalDays: template.total_days,
+            title: `${regionsStr} Multi-Region Tour for ${clientName}`,
+            price: totalPrice,
+            totalDays: combinedDays.length,
             status: 'draft'
           }, client);
 
-          const templateDays = typeof template.days === 'string' ? JSON.parse(template.days) : template.days;
-          for (const day of templateDays) {
+          for (const day of combinedDays) {
             await ItineraryModel.createDay({
               itineraryId: itinerary.id,
               dayNumber: day.dayNumber,

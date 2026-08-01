@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
 
-const SECRET = process.env.JWT_SECRET || 'vani_travels_super_secret_session_key_12345';
+const SECRET = process.env.JWT_SECRET || 'sandesh_travels_super_secret_session_key_12345';
 const COOKIE_NAME = 'partner_session';
 
 // Helper to derive a 256-bit key from our secret

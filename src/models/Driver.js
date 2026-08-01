@@ -12,13 +12,13 @@ export class DriverModel {
     return res.rows[0] || null;
   }
 
-  static async create({ driverName, driverPhone, vehicleNumber, vehicleModel }, client = null) {
+  static async create({ driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const res = await q(
-      `INSERT INTO drivers_registry (driver_name, driver_phone, vehicle_number, vehicle_model)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO drivers_registry (driver_name, driver_phone, vehicle_number, vehicle_model, vehicle_owner)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null]
+      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, vehicleOwner || null]
     );
     return res.rows[0];
   }
@@ -34,14 +34,14 @@ export class DriverModel {
     return res.rows[0] || null;
   }
 
-  static async update(id, { driverName, driverPhone, vehicleNumber, vehicleModel }, client = null) {
+  static async update(id, { driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const res = await q(
       `UPDATE drivers_registry 
-       SET driver_name = $1, driver_phone = $2, vehicle_number = $3, vehicle_model = $4
-       WHERE id = $5
+       SET driver_name = $1, driver_phone = $2, vehicle_number = $3, vehicle_model = $4, vehicle_owner = $5
+       WHERE id = $6
        RETURNING *`,
-      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, id]
+      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, vehicleOwner || null, id]
     );
     return res.rows[0] || null;
   }
@@ -70,7 +70,7 @@ export class DriverModel {
       JOIN itineraries i ON id_day.itinerary_id = i.id
       JOIN leads l ON i.lead_id = l.id
       WHERE id_day.driver_id IS NOT NULL 
-        AND l.status IN ('new', 'quoted', 'converted')
+        AND l.status IN ('new', 'quoted', 'converted', 'assigned')
         AND l.start_date IS NOT NULL
     `);
     return res.rows;

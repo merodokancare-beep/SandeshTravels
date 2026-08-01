@@ -116,13 +116,22 @@ export class ItineraryController {
         }
       }
 
+      // Fetch existing days to preserve driver_id assignments made in Fleet Assignment tab
+      const existingDays = await ItineraryModel.getDays(itineraryId, client);
+      const driverMap = {};
+      existingDays.forEach(ed => {
+        if (ed.driver_id) {
+          driverMap[ed.dayNumber || ed.day_number] = ed.driver_id;
+        }
+      });
+
       // Delete all existing days for this itinerary
       await ItineraryModel.deleteDays(itineraryId, client);
 
-      // Insert new days details
+      // Insert new days details while preserving any existing driver_id assignments
       for (const d of days) {
         const hotelId = d.hotelId ? parseInt(d.hotelId, 10) : null;
-        const driverId = d.driverId ? parseInt(d.driverId, 10) : null;
+        const driverId = d.driverId ? parseInt(d.driverId, 10) : (driverMap[d.dayNumber] || null);
 
         await ItineraryModel.createDay({
           itineraryId,
@@ -139,6 +148,15 @@ export class ItineraryController {
           if (!stayExists) {
             await HotelModel.createActiveStay(parseInt(leadId, 10), hotelId, client);
           }
+        }
+      }
+
+      // Auto-update lead status to 'assigned' if drivers are assigned to days
+      const hasAnyDriver = days.some(d => d.driverId) || Object.values(driverMap).some(Boolean);
+      if (hasAnyDriver) {
+        const lead = await LeadModel.getById(parseInt(leadId, 10), client);
+        if (lead && (lead.status === 'new' || lead.status === 'quoted' || lead.status === 'converted')) {
+          await LeadModel.update(lead.id, { status: 'assigned' }, client);
         }
       }
 
@@ -207,21 +225,25 @@ export class ItineraryController {
         if (itinerary) {
           const lead = await LeadModel.getById(itinerary.lead_id, client);
           if (lead) {
-            // Validation: Start date should be greater than or equal to converted/created date
-            const convertedLimit = lead.converted_at || lead.created_at;
-            const limitDate = new Date(convertedLimit);
-            limitDate.setHours(0, 0, 0, 0);
+            // Only enforce creation limit if lead was not previously converted/assigned and has no start_date set
+            if (!lead.start_date && lead.status !== 'converted' && lead.status !== 'assigned') {
+              const convertedLimit = lead.converted_at || lead.created_at;
+              if (convertedLimit) {
+                const limitDate = new Date(convertedLimit);
+                limitDate.setHours(0, 0, 0, 0);
 
-            const selectedDate = new Date(startDate);
-            selectedDate.setHours(0, 0, 0, 0);
+                const selectedDate = new Date(startDate);
+                selectedDate.setHours(0, 0, 0, 0);
 
-            if (selectedDate < limitDate) {
-              const limitStr = limitDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-              await client.query('ROLLBACK');
-              return NextResponse.json(
-                { error: `Validation Error: Start Date cannot be earlier than the converted/created date (${limitStr}).` },
-                { status: 400 }
-              );
+                if (selectedDate < limitDate) {
+                  const limitStr = limitDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  await client.query('ROLLBACK');
+                  return NextResponse.json(
+                    { error: `Validation Error: Start Date cannot be earlier than the converted/created date (${limitStr}).` },
+                    { status: 400 }
+                  );
+                }
+              }
             }
           }
           await LeadModel.update(itinerary.lead_id, { startDate }, client);
@@ -236,6 +258,18 @@ export class ItineraryController {
           item.driverId ? parseInt(item.driverId, 10) : null,
           client
         );
+      }
+
+      // Auto-update lead status to 'assigned' if drivers are assigned
+      const hasAnyDriver = assignments.some(a => a.driverId);
+      if (hasAnyDriver) {
+        const itinerary = await ItineraryModel.getById(parseInt(itineraryId, 10), client);
+        if (itinerary) {
+          const lead = await LeadModel.getById(itinerary.lead_id, client);
+          if (lead && (lead.status === 'new' || lead.status === 'quoted' || lead.status === 'converted')) {
+            await LeadModel.update(lead.id, { status: 'assigned' }, client);
+          }
+        }
       }
 
       // Check for double booking conflicts on the same date for confirmed journeys

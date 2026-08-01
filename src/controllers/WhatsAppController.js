@@ -49,13 +49,13 @@ export class WhatsAppController {
       const useSMS = channel === 'sms';
 
       if (useSMS) {
-        if (lead.status === 'converted' || lead.status === 'completed') {
-          message = `Hi ${lead.client_name}, your VaniTravels booking is confirmed! View driver/plan: ${guestItineraryUrl}`;
+        if (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') {
+          message = `Hi ${lead.client_name}, your Sandesh Travels booking is confirmed! View driver/plan: ${guestItineraryUrl}`;
         } else {
-          message = `Hi ${lead.client_name}, view your custom travel plan from VaniTravels: ${guestItineraryUrl}`;
+          message = `Hi ${lead.client_name}, view your custom travel plan from Sandesh Travels: ${guestItineraryUrl}`;
         }
       } else {
-        if (lead.status === 'converted' || lead.status === 'completed') {
+        if (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') {
           const firstDriver = await ItineraryModel.getFirstAssignedDriver(parseInt(itineraryId, 10));
 
           if (firstDriver) {
@@ -63,7 +63,7 @@ export class WhatsAppController {
               ? new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
               : 'Flexible';
 
-            message = `Hi ${lead.client_name}, your booking with VaniTravels is confirmed! 🚗✨\n\n`;
+            message = `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n`;
             message += `*JOURNEY DETAILS:*\n`;
             message += `• Route: ${itinerary.title}\n`;
             message += `• Start Date: ${formattedStartDate}\n`;
@@ -73,12 +73,12 @@ export class WhatsAppController {
             message += `• Driver Name: ${firstDriver.driver_name}\n`;
             message += `• Driver Contact: ${firstDriver.driver_phone}\n`;
             message += `• Vehicle: ${firstDriver.vehicle_model} (${firstDriver.vehicle_number || 'N/A'})\n\n`;
-            message += `Please click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing VaniTravels!`;
+            message += `Please click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
           } else {
-            message = `Hi ${lead.client_name}, your booking with VaniTravels is confirmed! 🚗✨\n\nPlease click the link below to view your full day-by-day program and itinerary updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing VaniTravels!`;
+            message = `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\nPlease click the link below to view your full day-by-day program and itinerary updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
           }
         } else {
-          message = `Hi ${lead.client_name}, this is VaniTravels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
+          message = `Hi ${lead.client_name}, this is Sandesh Travels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
         }
       }
 
