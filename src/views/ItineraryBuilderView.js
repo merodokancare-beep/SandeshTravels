@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
+import { ToastContainer } from '@/components/Toast';
 
 function getFormattedDateForDay(startDate, dayNum) {
   if (!startDate) return '';
@@ -82,6 +83,91 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [isSimulated, setIsSimulated] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = 'info', duration = 6000, action = null, title = null) => {
+    if (!message) return;
+    const id = Date.now() + Math.random().toString(36).substr(2, 6);
+    setToasts(prev => {
+      if (prev.some(t => t.message === message)) return prev;
+      return [...prev, { id, type, title, message, duration, action }];
+    });
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  // Trigger error toast
+  useEffect(() => {
+    if (error) {
+      addToast(error, 'error', 8000, null, 'Error Notification');
+    }
+  }, [error]);
+
+  // Trigger success toast
+  useEffect(() => {
+    if (success) {
+      const whatsappAction = isSimulated ? (
+        <a
+          href={getWhatsAppLink()}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            background: '#25D366',
+            color: '#fff',
+            fontSize: '0.75rem',
+            fontWeight: '600',
+            padding: '0.35rem 0.75rem',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            borderRadius: '6px',
+            textDecoration: 'none',
+            marginTop: '0.35rem'
+          }}
+        >
+          <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
+        </a>
+      ) : null;
+      addToast(success, 'success', 7000, whatsappAction, 'Success');
+    }
+  }, [success, isSimulated]);
+
+  // Trigger driver conflict warning toast
+  useEffect(() => {
+    if (hasDriverConflicts()) {
+      addToast(
+        'Scheduling Conflict Warning: One or more selected drivers are already booked on the scheduled dates for other trips. Please verify driver availability.',
+        'warning',
+        10000,
+        null,
+        'Scheduling Conflict'
+      );
+    }
+  }, [startDate, days, drivers]);
+
+  // Trigger lead status toast on initial load
+  useEffect(() => {
+    if (!lead) return;
+    if (lead.status === 'converted') {
+      addToast(
+        'Traveler has confirmed the booking. Assign drivers to each day below and click "Save Itinerary" to auto-transition status to FLEET ASSIGNED.',
+        'warning',
+        8000,
+        null,
+        'Lead Status: CONVERTED'
+      );
+    } else if (lead.status === 'assigned') {
+      addToast(
+        'Fleet is assigned and journey details are ready to be shared with traveler via WhatsApp or SMS.',
+        'info',
+        8000,
+        null,
+        'Lead Status: FLEET ASSIGNED'
+      );
+    }
+  }, [lead?.id, lead?.status]);
 
   const handleSendNotification = async (channel = 'whatsapp') => {
     const isSms = channel === 'sms';
@@ -101,14 +187,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       if (res.ok) {
         setSuccess(data.message || `${isSms ? 'SMS' : 'WhatsApp'} message sent directly to traveller!`);
         setIsSimulated(!!data.simulated);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         setError(data.error || `Failed to dispatch ${isSms ? 'SMS' : 'WhatsApp'} message.`);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
       setError(`Network error sending ${isSms ? 'SMS' : 'WhatsApp'} message.`);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       if (isSms) setSmsLoading(false);
       else setWhatsappLoading(false);
@@ -471,15 +554,12 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         setNumTravelers(data.lead.num_travelers || 1);
         setIsEditingGuest(false);
         setSuccess(`Guest details updated successfully! Saved mobile number: "${data.lead.client_phone}".`);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       } else {
         setError(data.error || 'Failed to update guest details.');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
       console.error(err);
       setError('Network error updating guest details.');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setGuestSaveLoading(false);
     }
@@ -500,7 +580,6 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         
         if (selectedDate < todayZero) {
           setError('Validation Error: Journey Start Date cannot be in the past (back date). Please select today or a future date.');
-          window.scrollTo({ top: 0, behavior: 'smooth' });
           return;
         }
       }
@@ -518,7 +597,6 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
       if (hasConflict) {
         setError('Scheduling Conflict Error: One or more selected drivers are already assigned to other confirmed trips on these dates. Please assign another driver.');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         return;
       }
     }
@@ -544,16 +622,13 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       if (res.ok) {
         setSuccess('Itinerary and travel start date saved & synced successfully.');
         setItineraryId(data.itineraryId);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
         router.refresh();
       } else {
         setError(data.error || 'Failed to save itinerary.');
-        window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     } catch (err) {
       console.error(err);
       setError('Network failure while saving.');
-      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setSaving(false);
     }
@@ -625,11 +700,21 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <Link href="/admin/dashboard" className="btn btn-secondary" style={{ padding: '0.5rem 0.8rem', fontSize: '0.85rem' }}>
             <i className="fa-solid fa-arrow-left"></i> Dashboard
           </Link>
-          <h1 style={{ fontSize: '1.25rem' }}>Itinerary Builder</h1>
+          <h1 style={{ fontSize: '1.25rem', margin: 0 }}>Itinerary Builder</h1>
+          {lead && lead.status === 'converted' && (
+            <span style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', color: '#FBBF24', padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <i className="fa-solid fa-clock"></i> PENDING FLEET ASSIGNMENT
+            </span>
+          )}
+          {lead && lead.status === 'assigned' && (
+            <span style={{ background: 'rgba(14,165,233,0.15)', border: '1px solid rgba(56,189,248,0.4)', color: '#38bdf8', padding: '0.25rem 0.65rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+              <i className="fa-solid fa-circle-check"></i> FLEET ASSIGNED
+            </span>
+          )}
         </div>
         <div>
           {itineraryId && (
@@ -718,63 +803,6 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
       {/* Main planner grid */}
       <main className="main-content" style={{ flexGrow: 1, padding: '2rem 2.5rem' }}>
-        
-        {/* Lead Status Info Banners */}
-        {lead && lead.status === 'converted' && (
-          <div style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#FBBF24', padding: '0.85rem 1.25rem', borderRadius: '12px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <i className="fa-solid fa-clock fa-xl"></i>
-            <div>
-              <strong style={{ fontSize: '0.95rem' }}>Lead Status: CONVERTED (Booking Confirmed — Pending Fleet Assignment)</strong>
-              <div style={{ fontSize: '0.82rem', opacity: 0.9, marginTop: '0.15rem' }}>Traveler has confirmed the booking. Assign drivers to each day below and click "Save Itinerary" to auto-transition status to <strong>FLEET ASSIGNED</strong>.</div>
-            </div>
-          </div>
-        )}
-
-        {lead && lead.status === 'assigned' && (
-          <div style={{ background: 'rgba(14,165,233,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38bdf8', padding: '0.85rem 1.25rem', borderRadius: '12px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
-            <i className="fa-solid fa-circle-check fa-xl"></i>
-            <div>
-              <strong style={{ fontSize: '0.95rem' }}>Lead Status: FLEET ASSIGNED (Vehicles & Drivers Dispatched)</strong>
-              <div style={{ fontSize: '0.82rem', opacity: 0.9, marginTop: '0.15rem' }}>Fleet is assigned and journey details are ready to be shared with traveler via WhatsApp or SMS.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Info alerts */}
-        {error && (
-          <div className="error-message" style={{ marginBottom: '1.5rem' }}>
-            <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '0.5rem' }}></i>
-            {error}
-          </div>
-        )}
-
-        {success && (
-          <div className="success-message" style={{ marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <i className="fa-solid fa-circle-check" style={{ marginRight: '0.5rem', color: '#10B981' }}></i>
-              <span>{success}</span>
-            </div>
-            {isSimulated && (
-              <a
-                href={getWhatsAppLink()}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-primary"
-                style={{ background: '#25D366', border: 'none', color: '#fff', fontSize: '0.85rem', fontWeight: '600', padding: '0.5rem 1rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderRadius: '4px', textDecoration: 'none' }}
-              >
-                <i className="fa-brands fa-whatsapp fa-lg"></i> Open WhatsApp Web (Manual Send)
-              </a>
-            )}
-          </div>
-        )}
-
-        {hasDriverConflicts() && (
-          <div className="error-message" style={{ marginBottom: '1.5rem', background: 'rgba(245,158,11,0.15)', border: '1px solid var(--accent-orange)', color: '#FBBF24' }}>
-            <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '0.5rem' }}></i>
-            <strong>Scheduling Conflict Warning:</strong> One or more selected drivers are already booked on the scheduled dates for other trips. Please verify driver availability.
-          </div>
-        )}
-
         <div className="grid-2" style={{ alignItems: 'flex-start', gridTemplateColumns: '320px 1fr' }}>
           {/* Left panel: Lead Info & Quick tools */}
           <aside style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -1391,6 +1419,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           </div>
         </div>
       </main>
+      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }

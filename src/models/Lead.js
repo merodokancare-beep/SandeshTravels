@@ -3,8 +3,15 @@ import { query } from '@/lib/db';
 export class LeadModel {
   static async getAll() {
     const res = await query(
-      `SELECT l.*, p.hotel_name as partner_name, p.commission_rate
+      `SELECT l.*, 
+              i.id as itinerary_id, 
+              i.title as itinerary_title, 
+              i.price as itinerary_price, 
+              i.total_days,
+              p.hotel_name as partner_name, 
+              p.commission_rate
        FROM leads l
+       LEFT JOIN itineraries i ON l.id = i.lead_id
        LEFT JOIN partners p ON l.partner_id = p.id
        ORDER BY l.created_at DESC`
     );

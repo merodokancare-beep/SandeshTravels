@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
+import { ToastContainer } from '@/components/Toast';
 
 function getTodayDateString() {
   const today = new Date();
@@ -26,11 +27,37 @@ export default function AdminDashboard() {
   const [fleetStartDates, setFleetStartDates] = useState({});
   const [calendarStartDate, setCalendarStartDate] = useState(getTodayDateString());
   const [bookModalTemplateRegion, setBookModalTemplateRegion] = useState('All');
-  const [activeTab, setActiveTab] = useState('leads'); // 'leads', 'fleet', 'hotels', 'drivers'
+  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = 'info', duration = 6000, action = null, title = null) => {
+    if (!message) return;
+    const id = Date.now() + Math.random().toString(36).substr(2, 6);
+    setToasts(prev => {
+      if (prev.some(t => t.message === message)) return prev;
+      return [...prev, { id, type, title, message, duration, action }];
+    });
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  useEffect(() => {
+    if (error) {
+      addToast(error, 'error', 8000, null, 'Error Notification');
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (success) {
+      addToast(success, 'success', 7000, null, 'Success');
+    }
+  }, [success]);
 
   // Search/Filter states
   const [leadsSearch, setLeadsSearch] = useState('');
@@ -75,6 +102,37 @@ export default function AdminDashboard() {
 
   // Selected cell for booking details popup
   const [activeCellDetails, setActiveCellDetails] = useState(null);
+
+  // Reports section state
+  const [reportSubTab, setReportSubTab] = useState('revenue'); // 'revenue', 'fleet', 'partners', 'regions'
+
+  const exportFinancialReportToCSV = () => {
+    const confirmedLeads = leads.filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed');
+    if (confirmedLeads.length === 0) {
+      alert('No confirmed booking data available to export.');
+      return;
+    }
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Booking ID,Client Name,Phone Number,Start Date,Status,Referral Partner,Itinerary Title,Booking Price (Rs.)\n";
+
+    confirmedLeads.forEach(l => {
+      const partnerName = l.partner_name || "Direct B2C";
+      const title = l.itinerary_title || "Custom Trip";
+      const price = parseFloat(l.itinerary_price) || 0;
+      const cleanTitle = `"${title.replace(/"/g, '""')}"`;
+      const cleanPhone = `"\t${l.client_phone || ''}"`; // Tab prefix prevents Excel scientific notation formatting
+      csvContent += `${l.id},"${l.client_name}",${cleanPhone},"${l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}","${l.status}","${partnerName}",${cleanTitle},${price}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `sandesh_travels_revenue_report_${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const router = useRouter();
 
@@ -938,6 +996,13 @@ export default function AdminDashboard() {
             >
               <i className="fa-solid fa-compass"></i> Itinerary Master
             </button>
+            <button 
+              onClick={() => setActiveTab('reports')} 
+              className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
+              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+            >
+              <i className="fa-solid fa-chart-pie"></i> Reports & Analytics
+            </button>
           </nav>
         </div>
         <div>
@@ -992,20 +1057,7 @@ export default function AdminDashboard() {
           )}
         </header>
 
-        {/* Global Notifications */}
-        {error && (
-          <div className="error-message" style={{ marginBottom: '1.5rem' }}>
-            <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '0.5rem' }}></i>
-            {error}
-          </div>
-        )}
 
-        {success && (
-          <div className="success-message" style={{ marginBottom: '1.5rem' }}>
-            <i className="fa-solid fa-circle-check" style={{ marginRight: '0.5rem' }}></i>
-            {success}
-          </div>
-        )}
 
         {/* Metrics Grid */}
         <section className="stats-grid">
@@ -2442,6 +2494,348 @@ export default function AdminDashboard() {
             )}
           </section>
         )}
+
+        {/* Reports & Analytics Tab */}
+        {activeTab === 'reports' && (
+          <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            {/* Header & Controls */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.4rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <i className="fa-solid fa-chart-pie" style={{ color: 'var(--accent-teal)' }}></i>
+                  Travel Business Reports & Analytics
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                  Executive performance reports, revenue metrics, driver dispatches, and B2B partner commissions for M/s Sandesh Travels.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={exportFinancialReportToCSV}
+                  style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem', color: '#38bdf8', borderColor: 'rgba(56,189,248,0.4)', background: 'rgba(56,189,248,0.08)', fontWeight: '600' }}
+                >
+                  <i className="fa-solid fa-file-csv"></i> Export CSV Report
+                </button>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => window.print()}
+                  style={{ padding: '0.45rem 0.85rem', fontSize: '0.85rem', color: '#FFF', fontWeight: '600' }}
+                >
+                  <i className="fa-solid fa-print"></i> Print Report
+                </button>
+              </div>
+            </div>
+
+            {/* Top Summary KPI Cards */}
+            {(() => {
+              const confirmedLeads = leads.filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed');
+              const totalRevenue = confirmedLeads.reduce((acc, l) => acc + (parseFloat(l.itinerary_price) || 0), 0);
+              const b2bLeads = confirmedLeads.filter(l => l.partner_id !== null);
+              const b2bRevenue = b2bLeads.reduce((acc, l) => acc + (parseFloat(l.itinerary_price) || 0), 0);
+              const totalCommission = b2bLeads.reduce((acc, l) => {
+                const rate = parseFloat(l.commission_rate) || 0;
+                const price = parseFloat(l.itinerary_price) || 0;
+                return acc + ((price * rate) / 100);
+              }, 0);
+              const activeFleetCount = fleet.filter(d => d.bookings && d.bookings.length > 0).length;
+
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem' }}>
+                  <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.12), rgba(6,78,59,0.2))', border: '1px solid rgba(16,185,129,0.3)', padding: '1.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#34D399', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Booking Revenue</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#FFF', margin: '0.3rem 0' }}>Rs. {totalRevenue.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Across {confirmedLeads.length} confirmed itineraries</div>
+                  </div>
+
+                  <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(56,189,248,0.12), rgba(12,74,110,0.2))', border: '1px solid rgba(56,189,248,0.3)', padding: '1.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Confirmed Bookings</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#FFF', margin: '0.3rem 0' }}>{confirmedLeads.length} Journeys</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{leads.filter(l => l.status === 'new' || l.status === 'quoted').length} pending inquiries</div>
+                  </div>
+
+                  <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.12), rgba(120,53,15,0.2))', border: '1px solid rgba(245,158,11,0.3)', padding: '1.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#FBBF24', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Fleet Utilization</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#FFF', margin: '0.3rem 0' }}>{activeFleetCount} / {fleet.length} Drivers</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Active on scheduled routes</div>
+                  </div>
+
+                  <div className="glass-card" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.12), rgba(88,28,135,0.2))', border: '1px solid rgba(168,85,247,0.3)', padding: '1.25rem' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#C084FC', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.05em' }}>B2B Commissions Payable</div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: '800', color: '#FFF', margin: '0.3rem 0' }}>Rs. {totalCommission.toLocaleString()}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>From Rs. {b2bRevenue.toLocaleString()} partner volume</div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Report Sub-tabs Navigation */}
+            <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
+              {[
+                { id: 'revenue', label: '💰 Revenue & Bookings Log', icon: 'fa-file-invoice-dollar' },
+                { id: 'fleet', label: '🚗 Fleet & Driver Report', icon: 'fa-car-side' },
+                { id: 'partners', label: '🤝 B2B Partner Commissions', icon: 'fa-handshake' },
+                { id: 'regions', label: '🌐 Regional Route Performance', icon: 'fa-map' }
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setReportSubTab(tab.id)}
+                  className={`btn ${reportSubTab === tab.id ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    padding: '0.4rem 0.85rem',
+                    fontSize: '0.8rem',
+                    fontWeight: reportSubTab === tab.id ? '600' : 'normal',
+                    border: reportSubTab === tab.id ? '1px solid var(--primary)' : '1px solid var(--border)'
+                  }}
+                >
+                  <i className={`fa-solid ${tab.icon}`} style={{ marginRight: '0.4rem' }}></i>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Sub-tab 1: Revenue & Bookings Log */}
+            {reportSubTab === 'revenue' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <h3 style={{ fontSize: '1.05rem', color: '#FFF' }}>Confirmed Traveler Booking Revenue Log</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Showing all converted, assigned, and completed journeys
+                  </span>
+                </div>
+
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                        <th>Guest Details</th>
+                        <th>Journey Start Date</th>
+                        <th>Route Program</th>
+                        <th>Lead Source</th>
+                        <th>Status</th>
+                        <th style={{ textAlign: 'right' }}>Booking Price (Rs.)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {leads
+                        .filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed')
+                        .map(l => (
+                          <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{l.client_name}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.client_phone} ({l.num_travelers} guest)</div>
+                            </td>
+                            <td>
+                              <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>
+                                {l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ fontWeight: '500', color: 'var(--accent-teal)' }}>{l.itinerary_title || 'Custom Plan'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.total_days} Days Program</div>
+                            </td>
+                            <td>
+                              {l.partner_name ? (
+                                <span className="badge badge-converted">Referral: {l.partner_name}</span>
+                              ) : (
+                                <span className="badge badge-new">B2C Direct</span>
+                              )}
+                            </td>
+                            <td>
+                              <span className={`badge badge-${l.status}`}>{l.status.toUpperCase()}</span>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-teal)', fontSize: '0.95rem' }}>
+                              Rs. {(parseFloat(l.itinerary_price) || 0).toLocaleString()}
+                            </td>
+                          </tr>
+                        ))
+                      }
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderTop: '2px solid var(--border)', fontWeight: '700' }}>
+                        <td colSpan="5" style={{ color: '#FFF', fontSize: '0.9rem' }}>GRAND TOTAL REVENUE</td>
+                        <td style={{ textAlign: 'right', color: 'var(--primary)', fontSize: '1.1rem' }}>
+                          Rs. {leads
+                            .filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed')
+                            .reduce((acc, l) => acc + (parseFloat(l.itinerary_price) || 0), 0)
+                            .toLocaleString()
+                          }
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 2: Fleet & Driver Report */}
+            {reportSubTab === 'fleet' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.05rem', color: '#FFF' }}>Transport Fleet & Driver Deployment Report</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Registered transport vehicles and assignment logs
+                  </span>
+                </div>
+
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                        <th>Driver Name</th>
+                        <th>Phone Number</th>
+                        <th>Vehicle Model & Number</th>
+                        <th>Vehicle Ownership</th>
+                        <th>Assigned Trips Count</th>
+                        <th>Occupancy Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {fleet.map(d => {
+                        const totalAssignedTrips = d.bookings ? d.bookings.length : 0;
+                        const isOwner = d.vehicle_owner && d.vehicle_owner.toLowerCase() === d.driver_name.toLowerCase();
+
+                        return (
+                          <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{d.driver_name}</strong>
+                            </td>
+                            <td>
+                              <span style={{ color: 'var(--accent-teal)' }}>{d.driver_phone}</span>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{d.vehicle_model || 'Vehicle'}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                            </td>
+                            <td>
+                              {isOwner ? (
+                                <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>Driver Owned Vehicle</span>
+                              ) : (
+                                <span className="badge badge-new" style={{ fontSize: '0.75rem' }}>Company Fleet</span>
+                              )}
+                            </td>
+                            <td style={{ fontWeight: '700', color: '#FFF' }}>
+                              {totalAssignedTrips} Days Dispatched
+                            </td>
+                            <td>
+                              {totalAssignedTrips > 0 ? (
+                                <span className="badge badge-assigned">On Scheduled Tours</span>
+                              ) : (
+                                <span className="badge badge-new">Available / Standby</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 3: B2B Partner Commissions */}
+            {reportSubTab === 'partners' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.05rem', color: '#FFF' }}>B2B Referral Partner Commission Report</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Track guest referrals, partner sales volume, and commission payouts
+                  </span>
+                </div>
+
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                        <th>Partner Hotel / Agency</th>
+                        <th>Contact Person</th>
+                        <th>Commission Rate</th>
+                        <th>Referred Bookings</th>
+                        <th>Total Booking Volume</th>
+                        <th style={{ textAlign: 'right' }}>Commission Payable</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {hotels.map(h => {
+                        const partnerLeads = leads.filter(l => l.partner_id === h.id && (l.status === 'converted' || l.status === 'assigned' || l.status === 'completed'));
+                        const volume = partnerLeads.reduce((acc, l) => acc + (parseFloat(l.itinerary_price) || 0), 0);
+                        const rate = parseFloat(h.commission_rate) || 10;
+                        const commission = (volume * rate) / 100;
+
+                        return (
+                          <tr key={h.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{h.name}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{h.location || 'Nepal'}</div>
+                            </td>
+                            <td>
+                              <div>{h.contact || 'N/A'}</div>
+                            </td>
+                            <td>
+                              <span className="badge badge-completed">{rate}% Commission</span>
+                            </td>
+                            <td style={{ fontWeight: '700', color: '#FFF' }}>
+                              {partnerLeads.length} Confirmed Guests
+                            </td>
+                            <td style={{ fontWeight: '600', color: 'var(--accent-teal)' }}>
+                              Rs. {volume.toLocaleString()}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: '800', color: '#C084FC', fontSize: '1rem' }}>
+                              Rs. {commission.toLocaleString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Sub-tab 4: Regional Route Performance */}
+            {reportSubTab === 'regions' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                  <h3 style={{ fontSize: '1.05rem', color: '#FFF' }}>Regional Route Popularity & Sales Analytics</h3>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    Breakdown of tourist interest across North, South, East, West, & Central regions
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                  {['North', 'South', 'East', 'West', 'Central'].map(reg => {
+                    const regTemplates = templates.filter(t => t.region && t.region.toLowerCase() === reg.toLowerCase());
+                    const regLeads = leads.filter(l => {
+                      const title = (l.itinerary_title || '').toLowerCase();
+                      return title.includes(reg.toLowerCase());
+                    });
+                    const regRevenue = regLeads.reduce((acc, l) => acc + (parseFloat(l.itinerary_price) || 0), 0);
+
+                    return (
+                      <div key={reg} className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', padding: '1.25rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                          <span className="badge badge-converted" style={{ fontSize: '0.75rem' }}>{reg} Region</span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{regTemplates.length} Package Blueprints</span>
+                        </div>
+                        <div style={{ fontSize: '1.4rem', fontWeight: '700', color: '#FFF', margin: '0.4rem 0' }}>
+                          {regLeads.length} Tour Bookings
+                        </div>
+                        <div style={{ fontSize: '0.85rem', color: 'var(--accent-teal)', fontWeight: '600' }}>
+                          Rs. {regRevenue.toLocaleString()} Revenue
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </main>
 
       {/* Book Walk-in / Phone Enquiry Modal */}
@@ -2467,9 +2861,11 @@ export default function AdminDashboard() {
               border: '1px solid var(--border)',
               borderRadius: 'var(--border-radius-lg)',
               width: '100%',
-              maxWidth: '560px',
+              maxWidth: '580px',
+              maxHeight: '85vh',
+              overflowY: 'auto',
               padding: '2rem',
-              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
               position: 'relative'
             }}
           >
@@ -2555,21 +2951,22 @@ export default function AdminDashboard() {
               </div>
 
               <div className="form-group">
-                <label>Referral Partner / Hotel (Optional selection)</label>
+                <label style={{ fontWeight: '600' }}>Referral Partner / Lead Source *</label>
                 <select 
                   className="form-control"
                   value={newLeadPartnerId}
                   onChange={(e) => setNewLeadPartnerId(e.target.value)}
+                  required
                 >
-                  <option value="">-- Direct Tourist (No Referral Partner) --</option>
+                  <option value="">Direct Tourist</option>
                   {partners.map(p => (
                     <option key={p.id} value={p.id}>
-                      {p.hotel_name} (Rate: {p.commission_rate}%)
+                      {p.hotel_name} (Commission: {p.commission_rate}%)
                     </option>
                   ))}
                 </select>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                  Attribute this lead to a registered B2B partner hotel for offline referral tracking.
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                  Attribute guest booking source to Direct Tourist or a registered B2B referral partner hotel.
                 </span>
               </div>
 
@@ -2914,6 +3311,7 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }

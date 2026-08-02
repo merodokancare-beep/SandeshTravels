@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { ToastContainer } from '@/components/Toast';
 
 export default function PartnerDashboard() {
   const [partner, setPartner] = useState(null);
@@ -10,6 +11,32 @@ export default function PartnerDashboard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = 'info', duration = 6000, action = null, title = null) => {
+    if (!message) return;
+    const id = Date.now() + Math.random().toString(36).substr(2, 6);
+    setToasts(prev => {
+      if (prev.some(t => t.message === message)) return prev;
+      return [...prev, { id, type, title, message, duration, action }];
+    });
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  useEffect(() => {
+    if (error) {
+      addToast(error, 'error', 8000, null, 'Error Notification');
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (success) {
+      addToast(success, 'success', 7000, null, 'Success');
+    }
+  }, [success]);
   
   // Form fields
   const [clientName, setClientName] = useState('');
@@ -219,19 +246,7 @@ export default function PartnerDashboard() {
               Refer New Guest Lead
             </h2>
 
-            {error && (
-              <div className="error-message" id="submit-error-msg">
-                <i className="fa-solid fa-circle-exclamation" style={{ marginRight: '0.5rem' }}></i>
-                {error}
-              </div>
-            )}
 
-            {success && (
-              <div className="success-message" id="submit-success-msg">
-                <i className="fa-solid fa-circle-check" style={{ marginRight: '0.5rem' }}></i>
-                {success}
-              </div>
-            )}
 
             <form onSubmit={handleLeadSubmit} id="lead-submission-form">
               <div className="form-group">
@@ -365,6 +380,7 @@ export default function PartnerDashboard() {
           </section>
         </div>
       </main>
+      <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );
 }
