@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
@@ -86,9 +86,23 @@ export default function AdminDashboard() {
   const [newLeadDates, setNewLeadDates] = useState('');
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
   const [newLeadStartDate, setNewLeadStartDate] = useState('');
-  const [newLeadTemplateId, setNewLeadTemplateId] = useState('');
   const [selectedWalkInTemplateIds, setSelectedWalkInTemplateIds] = useState([]);
   const [isWalkInMultiDropdownOpen, setIsWalkInMultiDropdownOpen] = useState(false);
+  const walkInDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (walkInDropdownRef.current && !walkInDropdownRef.current.contains(event.target)) {
+        setIsWalkInMultiDropdownOpen(false);
+      }
+    };
+    if (isWalkInMultiDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isWalkInMultiDropdownOpen]);
   const [newLeadPartnerId, setNewLeadPartnerId] = useState('');
 
   // Template CRUD form states
@@ -3062,7 +3076,12 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="form-group" style={{ position: 'relative' }}>
+              <div 
+                className="form-group" 
+                style={{ position: 'relative' }} 
+                ref={walkInDropdownRef}
+                onMouseLeave={() => setIsWalkInMultiDropdownOpen(false)}
+              >
                   <label style={{ fontWeight: '600', color: '#FFF' }}>
                     Region/Route Package Blueprints (Optional Multi-Selection)
                   </label>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, useRef, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
@@ -75,6 +75,21 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [templateRegionFilter, setTemplateRegionFilter] = useState('All');
   const [isMultiDropdownOpen, setIsMultiDropdownOpen] = useState(false);
   const [selectedMultiTemplateIds, setSelectedMultiTemplateIds] = useState([]);
+  const multiDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (multiDropdownRef.current && !multiDropdownRef.current.contains(event.target)) {
+        setIsMultiDropdownOpen(false);
+      }
+    };
+    if (isMultiDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isMultiDropdownOpen]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1041,7 +1056,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
               </div>
 
               {/* Multi-Select Checkbox Dropdown Box */}
-              <div style={{ position: 'relative', marginTop: '0.85rem' }}>
+              <div 
+                style={{ position: 'relative', marginTop: '0.85rem' }} 
+                ref={multiDropdownRef}
+                onMouseLeave={() => setIsMultiDropdownOpen(false)}
+              >
                 <div
                   onClick={() => setIsMultiDropdownOpen(prev => !prev)}
                   className="form-control"
