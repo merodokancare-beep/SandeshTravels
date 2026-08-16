@@ -181,79 +181,66 @@ export async function initDb() {
       );
     `);
 
-    // Seed default regional templates if empty
-    const templatesCount = await client.query('SELECT COUNT(*) FROM itinerary_templates');
-    if (parseInt(templatesCount.rows[0].count, 10) === 0) {
-      const templates = [
-        {
-          name: 'North Tour - Muktinath & Jomsom Jeep Adventure (5 Days)',
-          region: 'North',
-          total_days: 5,
-          estimated_price: 650.00,
-          days: JSON.stringify([
-            { dayNumber: 1, description: 'Drive from Pokhara to Tatopani. Relax in natural hot springs.', activities: 'Hot Springs, Scenic Drive' },
-            { dayNumber: 2, description: 'Drive from Tatopani to Jomsom via Kaligandaki gorge. Amazing mountain views of Dhaulagiri.', activities: 'Kaligandaki Gorge, Mountain Views' },
-            { dayNumber: 3, description: 'Drive Jomsom to Muktinath (Sacred Temple). Perform pilgrimage, drive back to Kagbeni.', activities: 'Muktinath Temple, Pilgrimage, Kagbeni' },
-            { dayNumber: 4, description: 'Drive Kagbeni back to Marpha (Apple Orchard village) and down to Tatopani/Beni.', activities: 'Apple Orchards, Village Walk' },
-            { dayNumber: 5, description: 'Return drive to Pokhara. Wrap up the journey.', activities: 'Return Drive, Pokhara Arrival' }
-          ])
-        },
-        {
-          name: 'Ghandruk Trek & Village Tour (3 Days)',
-          region: 'North',
-          total_days: 3,
-          estimated_price: 300.00,
-          days: JSON.stringify([
-            { dayNumber: 1, description: 'Drive Pokhara to Nayapul, start short trek to Ghandruk Gurung village.', activities: 'Scenic Drive, Trek Initiation, Ghandruk Village' },
-            { dayNumber: 2, description: 'Explore Ghandruk village, mountain views of Annapurna South and Machhapuchhre.', activities: 'Village Exploration, Culture, Sunrise Views' },
-            { dayNumber: 3, description: 'Trek down to Nayapul and drive back to Pokhara.', activities: 'Trek Return, Drive to Pokhara' }
-          ])
-        },
-        {
-          name: 'South Route - Chitwan Jungle Safari (3 Days)',
-          region: 'South',
-          total_days: 3,
-          estimated_price: 400.00,
-          days: JSON.stringify([
-            { dayNumber: 1, description: 'Drive from Pokhara/Kathmandu to Chitwan. Tharu village walk and cultural dance show.', activities: 'Drive to Chitwan, Cultural Dance, Tharu Village' },
-            { dayNumber: 2, description: 'Full day jungle activities: Canoe ride, Elephant breeding center visit, and Jeep Safari.', activities: 'Canoe Ride, Jeep Safari, Wildlife Spotting' },
-            { dayNumber: 3, description: 'Morning bird watching and drive back to Kathmandu/Pokhara.', activities: 'Bird Watching, Return Drive' }
-          ])
-        },
-        {
-          name: 'East Route - Tea Gardens of Ilam (4 Days)',
-          region: 'East',
-          total_days: 4,
-          estimated_price: 500.00,
-          days: JSON.stringify([
-            { dayNumber: 1, description: 'Fly/Drive to Bhadrapur, drive up to Ilam Tea Gardens. Walk in the lush green fields.', activities: 'Travel to Ilam, Tea Garden Walk' },
-            { dayNumber: 2, description: 'Full day sightseeing of Kanyam tea estate and pristine Maipokhari lake.', activities: 'Kanyam Sightseeing, Maipokhari Lake' },
-            { dayNumber: 3, description: 'Explore local cheese factories and view spectacular sunrise from Antu Danda.', activities: 'Cheese Tasting, Antu Danda Sunrise' },
-            { dayNumber: 4, description: 'Drive down to Bhadrapur for return flight/drive.', activities: 'Return Drive, Departure' }
-          ])
-        },
-        {
-          name: 'Kathmandu Valley Heritage Tour (3 Days)',
-          region: 'Central',
-          total_days: 3,
-          estimated_price: 250.00,
-          days: JSON.stringify([
-            { dayNumber: 1, description: 'Airport pickup and transfer to hotel. Evening walk around Thamel.', activities: 'Airport Pickup, Thamel Exploration' },
-            { dayNumber: 2, description: 'Full day sightseeing: Swayambhunath, Boudhanath, Pashupatinath, and Patan Durbar Square.', activities: 'Temple Sightseeing, Heritage Tour' },
-            { dayNumber: 3, description: 'Drive to Nagarkot for sunrise view, transfer to airport for departure.', activities: 'Nagarkot Sunrise, Departure Transfer' }
-          ])
-        }
-      ];
-
-      for (const t of templates) {
-        await client.query(`
-          INSERT INTO itinerary_templates (name, region, total_days, estimated_price, days)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (name) DO NOTHING
-        `, [t.name, t.region, t.total_days, t.estimated_price, t.days]);
+    // Seed default regional templates if empty or update existing
+    const templates = [
+      {
+        name: '3N-4D Gangtok & Tsomgo Lake / Baba Mandir (4 Days)',
+        region: 'East',
+        total_days: 4,
+        estimated_price: 16500.00,
+        days: JSON.stringify([
+          { dayNumber: 1, description: 'Pick up from NJP Railway Station / Bagdogra Airport (IXB) and transfer to Gangtok (125 KMS / 4 HRS). En-route option for Melli River Rafting. Check-in to hotel, rest of the day free to explore M.G. Marg on your own.', activities: 'Airport/NJP Pickup, Melli River Rafting, M.G. Marg Evening Walk' },
+          { dayNumber: 2, description: 'Gangtok Full Day Local Sightseeing (9:30 AM to 4:30 PM). Visits include Tashi Viewpoint, Ganesh Tok, Hanuman Tok, Bakthang Waterfalls, Ban Jhakri Waterfalls, Gonjang Monastery, Gangtok Ropeway, Flower Show, Handloom & Handicrafts, and Namgyal Institute of Tibetology.', activities: 'Tashi Viewpoint, Waterfalls, Monasteries, Gangtok Ropeway, Flower Show' },
+          { dayNumber: 3, description: 'Excursion to Tsomgo / Changu Lake (12,400 ft) & Baba Harbhajan Singh Mandir via Mandakini Waterfalls. Return to Gangtok by 4:00 PM. Optional tour to Nathula Pass (Indo-China Border) subject to permit availability.', activities: 'Tsomgo High Altitude Lake, Baba Harbhajan Mandir, Mandakini Waterfalls, Optional Nathula Pass' },
+          { dayNumber: 4, description: 'After breakfast, check out from Gangtok hotel and transfer back to NJP Railway Station or Bagdogra Airport (125 KMS / 4 HRS) for onward journey.', activities: 'Hotel Checkout, Departure Transfer to NJP/IXB' }
+        ])
+      },
+      {
+        name: 'North Sikkim Jeep Adventure - Lachen, Gurudongmar & Lachung (3 Days)',
+        region: 'North',
+        total_days: 3,
+        estimated_price: 15000.00,
+        days: JSON.stringify([
+          { dayNumber: 1, description: 'Pickup from Gangtok hotel (9:30–10:00 AM after permit creation). Transfer to Lachen (128 KMS / 6–8 HRS) via Tashi View Point, Seven Sister/Butterfly Waterfalls, Mangan Valley (Lunch), Singhik & Naga Waterfalls, Toong Check Post, Chumthang Valley. Arrive Lachen by 5 PM. Night halt at Lachen.', activities: 'Tashi View Point, Waterfalls, Mangan Valley, Singhik, Naga Waterfalls, Chumthang Valley, Lachen Halt' },
+          { dayNumber: 2, description: 'Early 4:30 AM pickup from Lachen for Gurudongmar Lake (15,900 ft) via Thangu Valley (Breakfast). Reach lake by 9 AM. Return to Lachen for Lunch (2 PM), then transfer to Lachung via Bhim Nala Waterfalls. Night halt at Lachung.', activities: 'Gurudongmar High Altitude Lake, Thangu Valley, Bhim Nala Waterfalls, Lachung Halt' },
+          { dayNumber: 3, description: '7:00 AM pickup from Lachung for Yumthang Valley. Visit Singhba Rhododendron Sanctuary and Natural Hot Springs. Optional Zero Point tour available. Return to Lachung for Lunch, then transfer to Gangtok hotel (6–7 PM arrival). Evening free at Gangtok Market.', activities: 'Yumthang Valley, Singhba Rhododendron Sanctuary, Hot Springs, Gangtok Return' }
+        ])
+      },
+      {
+        name: 'Pelling & Kalimpong Heritage Circuit (5 Days)',
+        region: 'West',
+        total_days: 5,
+        estimated_price: 25500.00,
+        days: JSON.stringify([
+          { dayNumber: 1, description: 'Pickup from Bagdogra Airport (IXB) / NJP Railway Station and transfer to Pelling (138 KMS / 6 HRS, 5,480 ft), the ancient capital of Sikkim. Check-in to hotel & rest of the day free to explore Pelling market.', activities: 'Airport/NJP Pickup, Drive to Pelling, Pelling Market Evening' },
+          { dayNumber: 2, description: 'Pelling Full Day Sightseeing (9:00 AM to 5:00 PM). Visit Pelling Helipad, Khecheopalri Sacred Lake, Khangchendzonga Waterfalls, Pemayangtse Monastery, Rabdentse Palace Ruins, Rimbi Waterfalls, Darap Cherry Village, Sewaro Rock Garden, and Glass Skywalk.', activities: 'Khecheopalri Lake, Khangchendzonga Waterfalls, Pemayangtse Monastery, Rabdentse Ruins, Glass Skywalk' },
+          { dayNumber: 3, description: 'Check out from Pelling hotel and transfer to Kalimpong (120 KMS / 5 HRS) via Melli (Sikkim-West Bengal Border). Check-in at Kalimpong hotel. Evening free to explore Kalimpong market on your own.', activities: 'Pelling to Kalimpong Drive, Melli Border Crossing, Kalimpong Market' },
+          { dayNumber: 4, description: 'Kalimpong Full Day Sightseeing (9:00 AM to 5:00 PM). Visit Durpin Dara Hill, Army Golf Club, Pine View Nursery, Shri Mangal Dham, Cactus Garden, Dr. Graham\'s Home, Hanuman Tok, Durga Mandir, Buddha Park, Science City, and Deolo Hill Point.', activities: 'Durpin Dara Hill, Deolo Hill Point, Dr. Grahams Home, Cactus Garden, Mangal Dham' },
+          { dayNumber: 5, description: 'Check out from Kalimpong hotel and transfer to NJP Railway Station / Bagdogra Airport (80 KMS / 3 HRS) for onward journey.', activities: 'Hotel Checkout, Departure Transfer to NJP/IXB' }
+        ])
       }
-      console.log('Seeded default regional templates.');
+    ];
+
+    for (const t of templates) {
+      await client.query(`
+        INSERT INTO itinerary_templates (name, region, total_days, estimated_price, days)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (name) DO UPDATE 
+        SET region = EXCLUDED.region, 
+            total_days = EXCLUDED.total_days, 
+            estimated_price = EXCLUDED.estimated_price, 
+            days = EXCLUDED.days
+      `, [t.name, t.region, t.total_days, t.estimated_price, t.days]);
     }
+
+    // Clean up old obsolete templates not in the active list
+    const currentNames = templates.map(t => t.name);
+    await client.query(
+      'DELETE FROM itinerary_templates WHERE name NOT IN ($1, $2, $3)',
+      currentNames
+    );
+
+    console.log('Seeded and synced default regional itinerary templates.');
 
     // Seed default admin and hotel partner if none exists
     const partnersCount = await client.query('SELECT COUNT(*) FROM partners');

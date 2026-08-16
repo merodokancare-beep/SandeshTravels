@@ -116,6 +116,9 @@ export class ItineraryController {
         }
       }
 
+      const leadObj = await LeadModel.getById(parseInt(leadId, 10), client);
+      const isConvertedLead = leadObj && (leadObj.status === 'converted' || leadObj.status === 'assigned' || leadObj.status === 'completed');
+
       // Fetch existing days to preserve driver_id assignments made in Fleet Assignment tab
       const existingDays = await ItineraryModel.getDays(itineraryId, client);
       const driverMap = {};
@@ -128,10 +131,10 @@ export class ItineraryController {
       // Delete all existing days for this itinerary
       await ItineraryModel.deleteDays(itineraryId, client);
 
-      // Insert new days details while preserving any existing driver_id assignments
+      // Insert new days details while preserving any existing driver_id assignments ONLY IF lead is converted
       for (const d of days) {
         const hotelId = d.hotelId ? parseInt(d.hotelId, 10) : null;
-        const driverId = d.driverId ? parseInt(d.driverId, 10) : (driverMap[d.dayNumber] || null);
+        const driverId = isConvertedLead ? (d.driverId ? parseInt(d.driverId, 10) : (driverMap[d.dayNumber] || null)) : null;
 
         await ItineraryModel.createDay({
           itineraryId,
@@ -151,12 +154,11 @@ export class ItineraryController {
         }
       }
 
-      // Auto-update lead status to 'assigned' if drivers are assigned to days
-      const hasAnyDriver = days.some(d => d.driverId) || Object.values(driverMap).some(Boolean);
-      if (hasAnyDriver) {
-        const lead = await LeadModel.getById(parseInt(leadId, 10), client);
-        if (lead && (lead.status === 'new' || lead.status === 'quoted' || lead.status === 'converted')) {
-          await LeadModel.update(lead.id, { status: 'assigned' }, client);
+      // Auto-update lead status to 'assigned' if drivers are assigned to days on converted lead
+      if (isConvertedLead) {
+        const hasAnyDriver = days.some(d => d.driverId) || Object.values(driverMap).some(Boolean);
+        if (hasAnyDriver && leadObj.status === 'converted') {
+          await LeadModel.update(leadObj.id, { status: 'assigned' }, client);
         }
       }
 

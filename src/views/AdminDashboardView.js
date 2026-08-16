@@ -114,15 +114,28 @@ export default function AdminDashboard() {
     }
 
     let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Booking ID,Client Name,Phone Number,Start Date,Status,Referral Partner,Itinerary Title,Booking Price (Rs.)\n";
+    csvContent += "Booking ID,Client Name,Phone Number,Start Date,Status,Assigned Fleet & Driver,Referral Partner,Itinerary Title,Booking Price (Rs.)\n";
 
     confirmedLeads.forEach(l => {
       const partnerName = l.partner_name || "Direct B2C";
       const title = l.itinerary_title || "Custom Trip";
       const price = parseFloat(l.itinerary_price) || 0;
+
+      const journey = journeys.find(j => String(j.lead.id) === String(l.id));
+      const assignedDrivers = [];
+      if (journey && journey.days) {
+        journey.days.forEach(d => {
+          if (d.driver_name && !assignedDrivers.some(a => a.driver_name === d.driver_name)) {
+            assignedDrivers.push(`${d.driver_name} (${d.vehicle_model || 'Vehicle'} - ${d.vehicle_number || 'N/A'})`);
+          }
+        });
+      }
+      const driverStr = assignedDrivers.length > 0 ? assignedDrivers.join(' | ') : "Unassigned";
+
       const cleanTitle = `"${title.replace(/"/g, '""')}"`;
-      const cleanPhone = `"\t${l.client_phone || ''}"`; // Tab prefix prevents Excel scientific notation formatting
-      csvContent += `${l.id},"${l.client_name}",${cleanPhone},"${l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}","${l.status}","${partnerName}",${cleanTitle},${price}\n`;
+      const cleanPhone = `"\t${l.client_phone || ''}"`;
+      const cleanDrivers = `"${driverStr.replace(/"/g, '""')}"`;
+      csvContent += `${l.id},"${l.client_name}",${cleanPhone},"${l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}","${l.status}",${cleanDrivers},"${partnerName}",${cleanTitle},${price}\n`;
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -2616,6 +2629,7 @@ export default function AdminDashboard() {
                         <th>Guest Details</th>
                         <th>Journey Start Date</th>
                         <th>Route Program</th>
+                        <th>Assigned Fleet & Driver</th>
                         <th>Lead Source</th>
                         <th>Status</th>
                         <th style={{ textAlign: 'right' }}>Booking Price (Rs.)</th>
@@ -2624,41 +2638,72 @@ export default function AdminDashboard() {
                     <tbody>
                       {leads
                         .filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed')
-                        .map(l => (
-                          <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td>
-                              <strong style={{ color: '#FFF' }}>{l.client_name}</strong>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.client_phone} ({l.num_travelers} guest)</div>
-                            </td>
-                            <td>
-                              <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>
-                                {l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}
-                              </span>
-                            </td>
-                            <td>
-                              <div style={{ fontWeight: '500', color: 'var(--accent-teal)' }}>{l.itinerary_title || 'Custom Plan'}</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.total_days} Days Program</div>
-                            </td>
-                            <td>
-                              {l.partner_name ? (
-                                <span className="badge badge-converted">Referral: {l.partner_name}</span>
-                              ) : (
-                                <span className="badge badge-new">B2C Direct</span>
-                              )}
-                            </td>
-                            <td>
-                              <span className={`badge badge-${l.status}`}>{l.status.toUpperCase()}</span>
-                            </td>
-                            <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-teal)', fontSize: '0.95rem' }}>
-                              Rs. {(parseFloat(l.itinerary_price) || 0).toLocaleString()}
-                            </td>
-                          </tr>
-                        ))
+                        .map(l => {
+                          const journey = journeys.find(j => String(j.lead.id) === String(l.id));
+                          const assignedDrivers = [];
+                          if (journey && journey.days) {
+                            journey.days.forEach(d => {
+                              if (d.driver_name && !assignedDrivers.some(a => a.driver_name === d.driver_name)) {
+                                assignedDrivers.push(d);
+                              }
+                            });
+                          }
+
+                          return (
+                            <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                              <td>
+                                <strong style={{ color: '#FFF' }}>{l.client_name}</strong>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.client_phone} ({l.num_travelers} guest)</div>
+                              </td>
+                              <td>
+                                <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>
+                                  {l.start_date ? parseLocalDateString(l.start_date) : 'Flexible'}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ fontWeight: '500', color: 'var(--accent-teal)' }}>{l.itinerary_title || 'Custom Plan'}</div>
+                                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.total_days} Days Program</div>
+                              </td>
+                              <td>
+                                {assignedDrivers.length > 0 ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                                    {assignedDrivers.map((drv, i) => (
+                                      <div key={i} style={{ fontSize: '0.8rem' }}>
+                                        <span style={{ color: '#FFF', fontWeight: '600' }}>
+                                          <i className="fa-solid fa-car-side" style={{ color: 'var(--accent-teal)', marginRight: '0.35rem' }}></i>
+                                          {drv.driver_name}
+                                        </span>
+                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                          {drv.vehicle_model || 'Vehicle'} ({drv.vehicle_number || 'N/A'}) • {drv.driver_phone}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>-- Unassigned Fleet --</span>
+                                )}
+                              </td>
+                              <td>
+                                {l.partner_name ? (
+                                  <span className="badge badge-converted">Referral: {l.partner_name}</span>
+                                ) : (
+                                  <span className="badge badge-new">B2C Direct</span>
+                                )}
+                              </td>
+                              <td>
+                                <span className={`badge badge-${l.status}`}>{l.status.toUpperCase()}</span>
+                              </td>
+                              <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--accent-teal)', fontSize: '0.95rem' }}>
+                                Rs. {(parseFloat(l.itinerary_price) || 0).toLocaleString()}
+                              </td>
+                            </tr>
+                          );
+                        })
                       }
                     </tbody>
                     <tfoot>
                       <tr style={{ background: 'var(--bg-surface-elevated)', borderTop: '2px solid var(--border)', fontWeight: '700' }}>
-                        <td colSpan="5" style={{ color: '#FFF', fontSize: '0.9rem' }}>GRAND TOTAL REVENUE</td>
+                        <td colSpan="6" style={{ color: '#FFF', fontSize: '0.9rem' }}>GRAND TOTAL REVENUE</td>
                         <td style={{ textAlign: 'right', color: 'var(--primary)', fontSize: '1.1rem' }}>
                           Rs. {leads
                             .filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed')
@@ -2690,8 +2735,9 @@ export default function AdminDashboard() {
                         <th>Driver Name</th>
                         <th>Phone Number</th>
                         <th>Vehicle Model & Number</th>
+                        <th>Assigned Guest / Tour</th>
                         <th>Vehicle Ownership</th>
-                        <th>Assigned Trips Count</th>
+                        <th>Assigned Days</th>
                         <th>Occupancy Status</th>
                       </tr>
                     </thead>
@@ -2699,6 +2745,16 @@ export default function AdminDashboard() {
                       {fleet.map(d => {
                         const totalAssignedTrips = d.bookings ? d.bookings.length : 0;
                         const isOwner = d.vehicle_owner && d.vehicle_owner.toLowerCase() === d.driver_name.toLowerCase();
+
+                        // Find assigned guest names for this driver
+                        const assignedGuestNames = [];
+                        journeys.forEach(j => {
+                          if (j.days && j.days.some(day => day.driver_name && day.driver_name.toLowerCase() === d.driver_name.toLowerCase())) {
+                            if (!assignedGuestNames.includes(j.lead.client_name)) {
+                              assignedGuestNames.push(j.lead.client_name);
+                            }
+                          }
+                        });
 
                         return (
                           <tr key={d.id} style={{ borderBottom: '1px solid var(--border)' }}>
@@ -2711,6 +2767,19 @@ export default function AdminDashboard() {
                             <td>
                               <strong style={{ color: '#FFF' }}>{d.vehicle_model || 'Vehicle'}</strong>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                            </td>
+                            <td>
+                              {assignedGuestNames.length > 0 ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                                  {assignedGuestNames.map((gName, idx) => (
+                                    <span key={idx} style={{ color: 'var(--accent-teal)', fontWeight: '600' }}>
+                                      👤 {gName}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>-- Standby / Available --</span>
+                              )}
                             </td>
                             <td>
                               {isOwner ? (
@@ -3026,8 +3095,52 @@ export default function AdminDashboard() {
                             {templates
                               .filter(t => selectedWalkInTemplateIds.includes(String(t.id)))
                               .map(t => (
-                                <span key={t.id} className="badge" style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid #38bdf8', color: '#38bdf8', fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
-                                  [{t.region}] {t.name}
+                                <span 
+                                  key={t.id} 
+                                  className="badge" 
+                                  style={{ 
+                                    background: 'rgba(56,189,248,0.15)', 
+                                    border: '1px solid #38bdf8', 
+                                    color: '#38bdf8', 
+                                    fontSize: '0.72rem', 
+                                    padding: '0.15rem 0.45rem',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem'
+                                  }}
+                                >
+                                  <span>[{t.region}] {t.name}</span>
+                                  <span
+                                    role="button"
+                                    title="Remove itinerary"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedWalkInTemplateIds(prev => prev.filter(id => id !== String(t.id)));
+                                    }}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      width: '14px',
+                                      height: '14px',
+                                      borderRadius: '50%',
+                                      background: 'rgba(56,189,248,0.25)',
+                                      color: '#38bdf8',
+                                      cursor: 'pointer',
+                                      fontSize: '0.65rem',
+                                      lineHeight: 1
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.currentTarget.style.background = '#ef4444';
+                                      e.currentTarget.style.color = '#ffffff';
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.currentTarget.style.background = 'rgba(56,189,248,0.25)';
+                                      e.currentTarget.style.color = '#38bdf8';
+                                    }}
+                                  >
+                                    <i className="fa-solid fa-xmark"></i>
+                                  </span>
                                 </span>
                               ))
                             }

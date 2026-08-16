@@ -198,6 +198,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     }
   };
 
+  const isLeadConverted = lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed');
+
   const getDriverOptionText = (d, dayNumber) => {
     const defaultText = `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
     if (!startDate) return defaultText;
@@ -329,7 +331,17 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         // 3. Fetch templates
         const templatesRes = await fetch('/api/admin/templates');
         const templatesData = await templatesRes.json();
-        setTemplates(templatesData.templates || []);
+        const loadedTemplates = templatesData.templates || [];
+        setTemplates(loadedTemplates);
+
+        if (itinData.itinerary && itinData.itinerary.title && loadedTemplates.length > 0) {
+          const matchedIds = loadedTemplates
+            .filter(t => itinData.itinerary.title.toLowerCase().includes(t.region.toLowerCase()) || itinData.itinerary.title.toLowerCase().includes(t.name.toLowerCase()))
+            .map(t => String(t.id));
+          if (matchedIds.length > 0) {
+            setSelectedMultiTemplateIds(matchedIds);
+          }
+        }
 
       } catch (err) {
         console.error('Error loading itinerary data:', err);
@@ -448,9 +460,18 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
   // Combine multiple selected region templates into one unified itinerary
   const handleCombineMultipleTemplates = (selectedIds) => {
-    if (!selectedIds || selectedIds.length === 0) return;
+    const ids = selectedIds || [];
+    setSelectedMultiTemplateIds(ids);
+
+    if (ids.length === 0) {
+      setTitle(`Custom Travel Plan for ${lead?.client_name || 'Guest'}`);
+      setPrice('0.00');
+      setTotalDays(1);
+      initializeDays(1);
+      return;
+    }
     
-    const selectedTemplates = templates.filter(t => selectedIds.includes(String(t.id)));
+    const selectedTemplates = templates.filter(t => ids.includes(String(t.id)));
     if (selectedTemplates.length === 0) return;
 
     let combinedDays = [];
@@ -464,23 +485,25 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
       totalPrice += (parseFloat(t.estimated_price) || 0);
 
       const templateDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
-      templateDays.forEach(d => {
-        combinedDays.push({
-          dayNumber: combinedDays.length + 1,
-          hotelId: '',
-          driverId: '',
-          description: d.description || '',
-          activities: d.activities || ''
+      if (Array.isArray(templateDays)) {
+        templateDays.forEach(d => {
+          combinedDays.push({
+            dayNumber: combinedDays.length + 1,
+            hotelId: '',
+            driverId: '',
+            description: d.description || '',
+            activities: d.activities || ''
+          });
         });
-      });
+      }
     });
 
     const regionsStr = regionNames.join(' & ');
-    setTitle(`${regionsStr} Multi-Region Tour for ${lead?.client_name}`);
-    setPrice(totalPrice);
+    setTitle(`${regionsStr} Multi-Region Tour for ${lead?.client_name || 'Guest'}`);
+    setPrice(totalPrice.toFixed(2));
     setTotalDays(combinedDays.length);
     setDays(combinedDays);
-    setSuccess(`Combined ${selectedTemplates.length} regional templates (${combinedDays.length} days total) for ${lead?.client_name}!`);
+    setSuccess(`Combined ${selectedTemplates.length} regional template(s) (${combinedDays.length} days total) for ${lead?.client_name || 'Guest'}!`);
     setError('');
   };
 
@@ -603,6 +626,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
     setSaving(true);
 
+    const sanitizedDays = days.map(d => ({
+      ...d,
+      driverId: isLeadConverted ? d.driverId : ''
+    }));
+
     try {
       const res = await fetch('/api/admin/itinerary', {
         method: 'POST',
@@ -612,7 +640,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           title,
           price,
           totalDays,
-          days,
+          days: sanitizedDays,
           startDate // Send the updated start_date too
         }),
       });
@@ -1040,8 +1068,52 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         {templates
                           .filter(t => selectedMultiTemplateIds.includes(String(t.id)))
                           .map(t => (
-                            <span key={t.id} className="badge" style={{ background: 'rgba(56,189,248,0.15)', border: '1px solid #38bdf8', color: '#38bdf8', fontSize: '0.72rem', padding: '0.15rem 0.45rem' }}>
-                              [{t.region}] {t.name}
+                            <span 
+                              key={t.id} 
+                              className="badge" 
+                              style={{ 
+                                background: 'rgba(56,189,248,0.15)', 
+                                border: '1px solid #38bdf8', 
+                                color: '#38bdf8', 
+                                fontSize: '0.72rem', 
+                                padding: '0.15rem 0.45rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem'
+                              }}
+                            >
+                              <span>[{t.region}] {t.name}</span>
+                              <span
+                                role="button"
+                                title="Remove itinerary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCombineMultipleTemplates(selectedMultiTemplateIds.filter(id => id !== String(t.id)));
+                                }}
+                                style={{
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  width: '14px',
+                                  height: '14px',
+                                  borderRadius: '50%',
+                                  background: 'rgba(56,189,248,0.25)',
+                                  color: '#38bdf8',
+                                  cursor: 'pointer',
+                                  fontSize: '0.65rem',
+                                  lineHeight: 1
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.background = '#ef4444';
+                                  e.currentTarget.style.color = '#ffffff';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.background = 'rgba(56,189,248,0.25)';
+                                  e.currentTarget.style.color = '#38bdf8';
+                                }}
+                              >
+                                <i className="fa-solid fa-xmark"></i>
+                              </span>
                             </span>
                           ))
                         }
@@ -1078,7 +1150,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                             const visibleIds = templates
                               .filter(t => templateRegionFilter === 'All' || t.region.toLowerCase() === templateRegionFilter.toLowerCase())
                               .map(t => String(t.id));
-                            setSelectedMultiTemplateIds(visibleIds);
+                            handleCombineMultipleTemplates(visibleIds);
                           }}
                           style={{ background: 'none', border: 'none', color: '#38bdf8', cursor: 'pointer', padding: 0 }}
                         >
@@ -1086,7 +1158,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         </button>
                         <button
                           type="button"
-                          onClick={() => setSelectedMultiTemplateIds([])}
+                          onClick={() => handleCombineMultipleTemplates([])}
                           style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', padding: 0 }}
                         >
                           Clear
@@ -1119,11 +1191,10 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                                   type="checkbox"
                                   checked={isChecked}
                                   onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedMultiTemplateIds(prev => [...prev, String(t.id)]);
-                                    } else {
-                                      setSelectedMultiTemplateIds(prev => prev.filter(id => id !== String(t.id)));
-                                    }
+                                    const next = e.target.checked
+                                      ? [...selectedMultiTemplateIds, String(t.id)]
+                                      : selectedMultiTemplateIds.filter(id => id !== String(t.id));
+                                    handleCombineMultipleTemplates(next);
                                   }}
                                   style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
                                 />
@@ -1257,12 +1328,19 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   <div>
                     <strong style={{ color: '#FFF', fontSize: '0.9rem' }}>Quick Assignment Tool</strong>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Assign a single driver/vehicle or hotel stay to all program days instantly.</p>
+                    {!isLeadConverted && (
+                      <span className="badge" style={{ marginTop: '0.35rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.72rem', background: 'rgba(245,158,11,0.15)', border: '1px solid #f59e0b', color: '#fbbf24' }}>
+                        <i className="fa-solid fa-lock"></i> Driver assignment unlocks after Lead Conversion
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                     <select
                       className="form-control"
-                      style={{ width: '220px', fontSize: '0.85rem', padding: '0.4rem' }}
+                      style={{ width: '220px', fontSize: '0.85rem', padding: '0.4rem', opacity: isLeadConverted ? 1 : 0.6, cursor: isLeadConverted ? 'pointer' : 'not-allowed' }}
                       defaultValue=""
+                      disabled={!isLeadConverted}
+                      title={!isLeadConverted ? "Driver assignment opens after lead status is converted" : ""}
                       onChange={(e) => {
                         const val = e.target.value;
                         if (val) {
@@ -1273,8 +1351,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         }
                       }}
                     >
-                      <option value="">-- Quick Assign Driver --</option>
-                      {drivers
+                      <option value="">{isLeadConverted ? '-- Quick Assign Driver --' : '🔒 Drivers Locked (Unconverted Lead)'}</option>
+                      {isLeadConverted && drivers
                         .filter(d => isDriverFreeForEntireJourney(d, days.length))
                         .map(d => (
                           <option key={d.id} value={d.id}>
@@ -1354,11 +1432,14 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                           </label>
                           <select
                             className="form-control"
-                            value={day.driverId}
+                            value={isLeadConverted ? day.driverId : ''}
+                            disabled={!isLeadConverted}
+                            style={{ opacity: isLeadConverted ? 1 : 0.6, cursor: isLeadConverted ? 'pointer' : 'not-allowed' }}
+                            title={!isLeadConverted ? "Driver assignment opens after lead status is converted" : ""}
                             onChange={(e) => handleDayFieldChange(idx, 'driverId', e.target.value)}
                           >
-                            <option value="">-- No driver/vehicle assigned --</option>
-                            {drivers
+                            <option value="">{isLeadConverted ? '-- No driver/vehicle assigned --' : '🔒 Driver assignment opens when lead is Converted'}</option>
+                            {isLeadConverted && drivers
                               .filter(d => isDriverFreeOnDate(d, day.dayNumber) || String(d.id) === String(day.driverId))
                               .map(d => (
                                 <option key={d.id} value={d.id}>
