@@ -839,13 +839,18 @@ export default function AdminDashboard() {
           travelDates: newLeadDates,
           numTravelers: newLeadTravelers,
           startDate: newLeadStartDate || null,
-          templateId: newLeadTemplateId || null,
+          templateId: (selectedWalkInTemplateIds && selectedWalkInTemplateIds.length > 0) ? selectedWalkInTemplateIds[0] : null,
           templateIds: selectedWalkInTemplateIds,
           partnerId: newLeadPartnerId || null
         })
       });
 
-      const data = await res.json();
+      let data = {};
+      try {
+        data = await res.json();
+      } catch (jsonErr) {
+        console.error('Failed to parse JSON response:', jsonErr);
+      }
 
       if (res.ok) {
         setSuccess(`Enquiry for "${newLeadName}" booked successfully.`);
@@ -854,7 +859,6 @@ export default function AdminDashboard() {
         setNewLeadDates('');
         setNewLeadTravelers(1);
         setNewLeadStartDate('');
-        setNewLeadTemplateId('');
         setSelectedWalkInTemplateIds([]);
         setIsWalkInMultiDropdownOpen(false);
         setNewLeadPartnerId('');
@@ -863,15 +867,17 @@ export default function AdminDashboard() {
         await fetchDashboardData();
 
         // If templates selected, send directly to itinerary builder
-        if (selectedWalkInTemplateIds.length > 0 || newLeadTemplateId) {
-          router.push(`/admin/itinerary/${data.lead.id}`);
+        if (selectedWalkInTemplateIds && selectedWalkInTemplateIds.length > 0) {
+          if (data?.lead?.id) {
+            router.push(`/admin/itinerary/${data.lead.id}`);
+          }
         }
       } else {
-        setError(data.error || 'Failed to book enquiry.');
+        setError(data.error || `Server Error (${res.status}): Unable to process booking. Please check database connection.`);
       }
     } catch (err) {
       console.error('Book enquiry error:', err);
-      setError('Failed to contact server.');
+      setError(`Network Error: ${err.message || 'Failed to contact server.'}`);
     } finally {
       setActionLoading(false);
     }

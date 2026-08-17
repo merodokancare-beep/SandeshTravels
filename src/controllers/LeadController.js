@@ -37,8 +37,9 @@ export class LeadController {
   }
 
   static async adminUpdateLead(request) {
-    const client = await getClient();
+    let client;
     try {
+      client = await getClient();
       const session = await getAdminSession();
       if (!session) {
         return NextResponse.json(
@@ -105,20 +106,23 @@ export class LeadController {
         lead: updatedLead
       });
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (client) {
+        try { await client.query('ROLLBACK'); } catch (e) {}
+      }
       console.error('LeadController adminUpdateLead error:', error);
       return NextResponse.json(
-        { error: 'Internal server error' },
+        { error: error.message || 'Internal server error' },
         { status: 500 }
       );
     } finally {
-      client.release();
+      if (client) client.release();
     }
   }
 
   static async adminCreateLead(request) {
-    const client = await getClient();
+    let client;
     try {
+      client = await getClient();
       const session = await getAdminSession();
       if (!session) {
         return NextResponse.json(
@@ -170,16 +174,28 @@ export class LeadController {
             }
             totalPrice += (parseFloat(template.estimated_price) || 0);
 
-            const templateDays = typeof template.days === 'string' ? JSON.parse(template.days) : template.days;
-            templateDays.forEach(d => {
-              combinedDays.push({
-                dayNumber: combinedDays.length + 1,
-                hotelId: null,
-                driverId: null,
-                description: d.description || '',
-                activities: d.activities || ''
+            let templateDays = [];
+            if (typeof template.days === 'string') {
+              try {
+                templateDays = JSON.parse(template.days);
+              } catch (parseErr) {
+                templateDays = [];
+              }
+            } else if (Array.isArray(template.days)) {
+              templateDays = template.days;
+            }
+
+            if (Array.isArray(templateDays)) {
+              templateDays.forEach(d => {
+                combinedDays.push({
+                  dayNumber: combinedDays.length + 1,
+                  hotelId: null,
+                  driverId: null,
+                  description: d?.description || '',
+                  activities: d?.activities || ''
+                });
               });
-            });
+            }
           }
         }
 
@@ -213,14 +229,16 @@ export class LeadController {
         lead
       });
     } catch (error) {
-      await client.query('ROLLBACK');
+      if (client) {
+        try { await client.query('ROLLBACK'); } catch (e) {}
+      }
       console.error('LeadController adminCreateLead error:', error);
       return NextResponse.json(
-        { error: 'Internal server error during booking creation.' },
+        { error: error.message || 'Internal server error during booking creation.' },
         { status: 500 }
       );
     } finally {
-      client.release();
+      if (client) client.release();
     }
   }
 
