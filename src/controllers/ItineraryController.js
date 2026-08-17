@@ -309,4 +309,41 @@ export class ItineraryController {
       client.release();
     }
   }
+
+  static async updateDriverSnapshot(request) {
+    try {
+      const session = await getAdminSession();
+      if (!session) {
+        return NextResponse.json({ error: 'Unauthorized. Please log in as admin.' }, { status: 401 });
+      }
+
+      const { itineraryId, driverName, driverPhone, vehicleNumber, vehicleModel } = await request.json();
+
+      if (!itineraryId || !driverName) {
+        return NextResponse.json({ error: 'Itinerary ID and Driver Name are required.' }, { status: 400 });
+      }
+
+      const { query: dbQuery } = await import('@/lib/db');
+      await dbQuery(
+        `UPDATE itinerary_days 
+         SET driver_name_snapshot = $1,
+             driver_phone_snapshot = $2,
+             vehicle_number_snapshot = $3,
+             vehicle_model_snapshot = $4
+         WHERE itinerary_id = $5`,
+        [driverName, driverPhone || null, vehicleNumber || null, vehicleModel || null, parseInt(itineraryId, 10)]
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: 'Historical driver details updated successfully.'
+      });
+    } catch (error) {
+      console.error('ItineraryController updateDriverSnapshot error:', error);
+      return NextResponse.json(
+        { error: error.message || 'Internal server error updating driver history.' },
+        { status: 500 }
+      );
+    }
+  }
 }

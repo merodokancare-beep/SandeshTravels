@@ -167,6 +167,22 @@ export async function initDb() {
       ALTER TABLE leads 
       ADD COLUMN IF NOT EXISTS start_date DATE,
       ADD COLUMN IF NOT EXISTS converted_at DATE;
+
+      ALTER TABLE itinerary_days 
+      ADD COLUMN IF NOT EXISTS driver_name_snapshot VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS driver_phone_snapshot VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS vehicle_number_snapshot VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS vehicle_model_snapshot VARCHAR(50);
+
+      UPDATE itinerary_days id_day
+      SET 
+        driver_name_snapshot = d.driver_name,
+        driver_phone_snapshot = d.driver_phone,
+        vehicle_number_snapshot = d.vehicle_number,
+        vehicle_model_snapshot = d.vehicle_model
+      FROM drivers_registry d
+      WHERE id_day.driver_id = d.id
+        AND id_day.driver_name_snapshot IS NULL;
     `);
 
     // 8. Itinerary Preset Templates

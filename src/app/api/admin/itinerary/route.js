@@ -7,3 +7,7 @@ export async function GET(request) {
 export async function POST(request) {
   return ItineraryController.saveItinerary(request);
 }
+
+export async function PUT(request) {
+  return ItineraryController.updateDriverSnapshot(request);
+}

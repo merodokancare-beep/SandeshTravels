@@ -52,7 +52,7 @@ export class DriverController {
         const existing = await DriverModel.getByVehicleNumber(cleanVehicleNumber);
         if (existing) {
           return NextResponse.json(
-            { error: `Vehicle registration "${cleanVehicleNumber}" is already registered to driver "${existing.driver_name}".` },
+            { error: `Vehicle "${cleanVehicleNumber}" is already registered under driver "${existing.driver_name}". Please edit the existing vehicle driver profile to update the driver.` },
             { status: 400 }
           );
         }
@@ -92,13 +92,12 @@ export class DriverController {
         );
       }
 
-      // Check for vehicle registration uniqueness
       if (vehicleNumber) {
         const cleanVehicleNumber = vehicleNumber.trim().toUpperCase();
         const existing = await DriverModel.getByVehicleNumber(cleanVehicleNumber);
         if (existing && String(existing.id) !== String(id)) {
           return NextResponse.json(
-            { error: `Vehicle registration "${cleanVehicleNumber}" is already registered to driver "${existing.driver_name}".` },
+            { error: `Vehicle "${cleanVehicleNumber}" is already registered under driver "${existing.driver_name}".` },
             { status: 400 }
           );
         }

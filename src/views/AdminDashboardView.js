@@ -117,8 +117,191 @@ export default function AdminDashboard() {
   // Selected cell for booking details popup
   const [activeCellDetails, setActiveCellDetails] = useState(null);
 
+  // Journey Tracking sub-tab: 'live' | 'upcoming' | 'completed'
+  const [trackingSubTab, setTrackingSubTab] = useState('live');
+  const [trackingSearch, setTrackingSearch] = useState('');
+  const [trackingMonthFilter, setTrackingMonthFilter] = useState('all'); // 'all' or 0-11
+  const [trackingYearFilter, setTrackingYearFilter] = useState('all'); // 'all' or year number
+
   // Reports section state
-  const [reportSubTab, setReportSubTab] = useState('revenue'); // 'revenue', 'fleet', 'partners', 'regions'
+  const [reportSubTab, setReportSubTab] = useState('revenue'); // 'revenue', 'drivers_monthly', 'fleet', 'partners', 'regions'
+  const [driverReportMonth, setDriverReportMonth] = useState(new Date().getMonth()); // 0-11
+  const [driverReportYear, setDriverReportYear] = useState(new Date().getFullYear());
+  const [selectedDriverDetails, setSelectedDriverDetails] = useState(null);
+
+  // Edit Driver History Modal state
+  const [showEditHistoryModal, setShowEditHistoryModal] = useState(false);
+  const [editHistoryItinId, setEditHistoryItinId] = useState(null);
+  const [editHistoryDriverName, setEditHistoryDriverName] = useState('');
+  const [editHistoryDriverPhone, setEditHistoryDriverPhone] = useState('');
+  const [editHistoryVehicleModel, setEditHistoryVehicleModel] = useState('');
+  const [editHistoryVehicleNumber, setEditHistoryVehicleNumber] = useState('');
+
+  const handleSaveDriverHistory = async (e) => {
+    e.preventDefault();
+    if (!editHistoryItinId || !editHistoryDriverName) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/itinerary', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itineraryId: editHistoryItinId,
+          driverName: editHistoryDriverName,
+          driverPhone: editHistoryDriverPhone,
+          vehicleNumber: editHistoryVehicleNumber,
+          vehicleModel: editHistoryVehicleModel
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess('Historical driver details updated & locked successfully!');
+        setShowEditHistoryModal(false);
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to save driver history.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Network error saving driver history.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Helper: compute the actual calendar date for a given itinerary day
+  // e.g. start_date=2026-08-31, day_number=2 → 2026-09-01
+  const getActualDayDate = (startDateStr, dayNumber) => {
+    if (!startDateStr || !dayNumber) return null;
+    const parts = String(startDateStr).split('-');
+    if (parts.length !== 3) return null;
+    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    d.setDate(d.getDate() + (dayNumber - 1));
+    return d; // local Date object, no UTC shift
+  };
+
+  const getMonthlyDriverReportList = () => {
+    // Keyed by driver_id (preferred) or normalized name (fallback for historical snapshots)
+    const driverMapById = {};
+    const driverMapByName = {};
+
+    journeys.forEach(j => {
+      const statusOk = j.lead.status === 'converted' || j.lead.status === 'assigned' || j.lead.status === 'completed';
+      if (!statusOk) return;
+      if (!j.lead.start_date) return;
+      if (!j.days || !Array.isArray(j.days)) return;
+
+      // Track which drivers we've already counted for this journey in this month
+      // (a driver may span multiple days of the same journey – count as 1 tour)
+      const seenInThisJourney = new Set();
+
+      j.days.forEach(day => {
+        const dName = (day.driver_name_snapshot || day.driver_name || '').trim();
+        if (!dName) return;
+
+        // ── Cross-month support ────────────────────────────────────────────
+        // Compute the actual calendar date for this specific day of the journey.
+        // Example: start Aug 31, day_number 2 → actual date Sep 1.
+        // Only include this day if its actual date falls in the selected month/year.
+        const actualDate = getActualDayDate(j.lead.start_date, day.day_number);
+        if (!actualDate) return;
+        if (actualDate.getFullYear() !== driverReportYear) return;
+        if (actualDate.getMonth() !== driverReportMonth) return;
+        // ──────────────────────────────────────────────────────────────────
+
+        const driverId = day.driver_id ? String(day.driver_id) : null;
+        const dedupeKey = driverId ? `id:${driverId}` : `name:${dName.toLowerCase()}`;
+        if (seenInThisJourney.has(dedupeKey)) return;
+        seenInThisJourney.add(dedupeKey);
+
+        if (driverId) {
+          if (!driverMapById[driverId]) {
+            driverMapById[driverId] = {
+              id: day.driver_id,
+              driver_name: dName,
+              driver_phone: (day.driver_phone_snapshot || day.driver_phone || 'N/A').trim(),
+              vehicle_model: (day.vehicle_model_snapshot || day.vehicle_model || 'Vehicle').trim(),
+              vehicle_number: (day.vehicle_number_snapshot || day.vehicle_number || 'N/A').trim(),
+              tours: []
+            };
+          }
+          if (!driverMapById[driverId].tours.some(t => String(t.lead.id) === String(j.lead.id))) {
+            driverMapById[driverId].tours.push(j);
+          }
+        } else {
+          const nameKey = dName.toLowerCase();
+          if (!driverMapByName[nameKey]) {
+            driverMapByName[nameKey] = {
+              id: nameKey,
+              driver_name: dName,
+              driver_phone: (day.driver_phone_snapshot || day.driver_phone || 'N/A').trim(),
+              vehicle_model: (day.vehicle_model_snapshot || day.vehicle_model || 'Vehicle').trim(),
+              vehicle_number: (day.vehicle_number_snapshot || day.vehicle_number || 'N/A').trim(),
+              tours: []
+            };
+          }
+          if (!driverMapByName[nameKey].tours.some(t => String(t.lead.id) === String(j.lead.id))) {
+            driverMapByName[nameKey].tours.push(j);
+          }
+        }
+      });
+    });
+
+    // Merge ID-keyed and name-keyed maps
+    const result = [...Object.values(driverMapById), ...Object.values(driverMapByName)];
+
+    // Append registered drivers with 0 tours this month (not already in result)
+    const seenDriverIds = new Set(Object.keys(driverMapById));
+    const seenDriverNames = new Set([
+      ...Object.values(driverMapById).map(d => d.driver_name.trim().toLowerCase()),
+      ...Object.keys(driverMapByName)
+    ]);
+
+    fleet.forEach(d => {
+      const dId = String(d.id);
+      const dNameNorm = (d.driver_name || '').trim().toLowerCase();
+      if (!seenDriverIds.has(dId) && !seenDriverNames.has(dNameNorm)) {
+        result.push({
+          id: d.id,
+          driver_name: d.driver_name,
+          driver_phone: d.driver_phone || 'N/A',
+          vehicle_model: d.vehicle_model || 'Vehicle',
+          vehicle_number: d.vehicle_number || 'N/A',
+          tours: []
+        });
+      }
+    });
+
+    // Sort: drivers with tours first, then alphabetically
+    return result.sort((a, b) => {
+      if (b.tours.length !== a.tours.length) return b.tours.length - a.tours.length;
+      return a.driver_name.localeCompare(b.driver_name);
+    });
+  };
+
+  const exportDriverMonthlyReportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Driver Name,Driver Number,Vehicle Details,No of Tour,Total Amount (Rs.)\n";
+
+    const reportList = getMonthlyDriverReportList();
+
+    reportList.forEach(d => {
+      const totalAmount = d.tours.reduce((sum, j) => sum + (parseFloat(j.lead.itinerary_price) || 0), 0);
+      const vehicleStr = `${d.vehicle_model || ''} ${d.vehicle_number || ''}`.trim() || 'N/A';
+      const cleanPhone = `"\t${d.driver_phone || ''}"`;
+
+      csvContent += `"${d.driver_name.replace(/"/g, '""')}",${cleanPhone},"${vehicleStr.replace(/"/g, '""')}",${d.tours.length},${totalAmount}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    link.setAttribute("download", `Driver_Monthly_Report_${monthNames[driverReportMonth]}_${driverReportYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const exportFinancialReportToCSV = () => {
     const confirmedLeads = leads.filter(l => l.status === 'converted' || l.status === 'assigned' || l.status === 'completed');
@@ -1001,13 +1184,63 @@ export default function AdminDashboard() {
             >
               <i className="fa-solid fa-key"></i> Fleet Assignment
             </button>
-            <button 
-              onClick={() => setActiveTab('tracking')} 
+            {/* Journey Tracking — expandable parent */}
+            <button
+              onClick={() => { setActiveTab('tracking'); setTrackingSubTab('live'); }}
               className={`nav-link ${activeTab === 'tracking' ? 'active' : ''}`}
               style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
             >
               <i className="fa-solid fa-route"></i> Journey Tracking
             </button>
+            {activeTab === 'tracking' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '1rem', marginTop: '-4px', marginBottom: '4px' }}>
+                <button
+                  onClick={() => setTrackingSubTab('live')}
+                  style={{
+                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'live' ? '700' : '500',
+                    color: trackingSubTab === 'live' ? 'var(--primary)' : 'var(--text-secondary)',
+                    background: trackingSubTab === 'live' ? 'rgba(16,185,129,0.08)' : 'transparent',
+                    borderLeft: trackingSubTab === 'live' ? '2px solid var(--primary)' : '2px solid transparent',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <i className="fa-solid fa-circle-dot" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--primary)' }}></i>
+                  Live Journey
+                </button>
+                <button
+                  onClick={() => setTrackingSubTab('upcoming')}
+                  style={{
+                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'upcoming' ? '700' : '500',
+                    color: trackingSubTab === 'upcoming' ? 'var(--accent-teal)' : 'var(--text-secondary)',
+                    background: trackingSubTab === 'upcoming' ? 'rgba(20,184,166,0.08)' : 'transparent',
+                    borderLeft: trackingSubTab === 'upcoming' ? '2px solid var(--accent-teal)' : '2px solid transparent',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <i className="fa-solid fa-calendar-days" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--accent-teal)' }}></i>
+                  Upcoming Journey
+                </button>
+                <button
+                  onClick={() => setTrackingSubTab('completed')}
+                  style={{
+                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'completed' ? '700' : '500',
+                    color: trackingSubTab === 'completed' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    background: trackingSubTab === 'completed' ? 'rgba(255,255,255,0.05)' : 'transparent',
+                    borderLeft: trackingSubTab === 'completed' ? '2px solid var(--text-muted)' : '2px solid transparent',
+                    transition: 'all 0.15s'
+                  }}
+                >
+                  <i className="fa-solid fa-circle-check" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--text-muted)' }}></i>
+                  Completed Journey
+                </button>
+              </div>
+            )}
             <button 
               onClick={() => setActiveTab('hotels')} 
               className={`nav-link ${activeTab === 'hotels' ? 'active' : ''}`}
@@ -1654,224 +1887,319 @@ export default function AdminDashboard() {
           </section>
         )}
 
-        {activeTab === 'tracking' && (
+        {activeTab === 'tracking' && (() => {
+          // 1. Filter journeys based on selected sub-tab
+          const hasDriver = j => j.days.some(d => d.driver_id !== null);
+          const subTabJourneys = journeys.filter(j => {
+            if (!hasDriver(j)) return false;
+            const info = getJourneyTimelineStatus(j.lead, j.itinerary);
+            if (trackingSubTab === 'live')      return info.status === 'active';
+            if (trackingSubTab === 'upcoming')  return info.status === 'upcoming';
+            if (trackingSubTab === 'completed') return j.lead.status === 'completed' || info.status === 'completed';
+            return false;
+          });
+
+          // 2. Apply search and date filters
+          const filteredJourneys = subTabJourneys.filter(j => {
+            // Search text filter
+            if (trackingSearch.trim()) {
+              const q = trackingSearch.trim().toLowerCase();
+              const guestName = (j.lead.client_name || '').toLowerCase();
+              const phone = (j.lead.client_phone || '').toLowerCase();
+              const itinTitle = (j.itinerary?.title || '').toLowerCase();
+              const driverMatch = j.days && j.days.some(d => (d.driver_name_snapshot || d.driver_name || '').toLowerCase().includes(q));
+              if (!guestName.includes(q) && !phone.includes(q) && !itinTitle.includes(q) && !driverMatch) {
+                return false;
+              }
+            }
+
+            // Month & Year filter
+            if (trackingMonthFilter !== 'all' || trackingYearFilter !== 'all') {
+              if (!j.lead.start_date) return false;
+              const parts = String(j.lead.start_date).split('-');
+              if (parts.length === 3) {
+                const yr = parseInt(parts[0], 10);
+                const mo = parseInt(parts[1], 10) - 1; // 0-11
+                if (trackingYearFilter !== 'all' && yr !== parseInt(trackingYearFilter, 10)) {
+                  return false;
+                }
+                if (trackingMonthFilter !== 'all' && mo !== parseInt(trackingMonthFilter, 10)) {
+                  return false;
+                }
+              }
+            }
+
+            return true;
+          });
+
+          const subTabMeta = {
+            live:      { title: '🟢 Live Journey Operations',        sub: 'Currently on-road guest travels, active driver dispatches, and live hotel check-ins.', accentColor: 'var(--primary)' },
+            upcoming:  { title: '📅 Upcoming Journeys',              sub: 'Scheduled and confirmed journeys that are yet to depart.', accentColor: 'var(--accent-teal)' },
+            completed: { title: '✅ Completed & Ended Journeys',     sub: 'Historical archive of all finished guest journeys.', accentColor: 'var(--text-secondary)' },
+          };
+          const meta = subTabMeta[trackingSubTab];
+          const hasActiveFilters = Boolean(trackingSearch.trim() || trackingMonthFilter !== 'all' || trackingYearFilter !== 'all');
+
+          return (
           <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
               <div>
-                <h2>Live Journey Operations & Tracking</h2>
+                <h2 style={{ color: meta.accentColor }}>{meta.title}</h2>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  Track ongoing guest travels, driver logistics, hotel check-ins, and active itineraries.
+                  {meta.sub} {subTabJourneys.length > 0 && `(${filteredJourneys.length} of ${subTabJourneys.length})`}
                 </p>
               </div>
-              <button className="btn btn-secondary" onClick={() => fetchDashboardData()}>
-                <i className="fa-solid fa-rotate"></i> Refresh Tracker
-              </button>
+
+              {/* Filter Toolbar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                {/* Search Box */}
+                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <i className="fa-solid fa-magnifying-glass" style={{ position: 'absolute', left: '0.65rem', color: 'var(--text-muted)', fontSize: '0.8rem', pointerEvents: 'none' }}></i>
+                  <input
+                    type="text"
+                    placeholder="Search guest, phone, route..."
+                    value={trackingSearch}
+                    onChange={(e) => setTrackingSearch(e.target.value)}
+                    className="form-control"
+                    style={{
+                      padding: '0.35rem 1.6rem 0.35rem 2rem',
+                      fontSize: '0.82rem',
+                      background: 'var(--bg-surface-elevated)',
+                      color: '#FFF',
+                      width: '200px',
+                      borderRadius: '6px'
+                    }}
+                  />
+                  {trackingSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setTrackingSearch('')}
+                      style={{ position: 'absolute', right: '0.5rem', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '0.85rem' }}
+                      title="Clear search"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+
+                {/* Month Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Month:</span>
+                  <select
+                    className="form-control"
+                    value={trackingMonthFilter}
+                    onChange={(e) => setTrackingMonthFilter(e.target.value)}
+                    style={{ padding: '0.35rem 0.55rem', fontSize: '0.82rem', background: 'var(--bg-surface-elevated)', color: '#FFF', borderRadius: '6px' }}
+                  >
+                    <option value="all">All Months</option>
+                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((mName, mIdx) => (
+                      <option key={mIdx} value={mIdx}>{mName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Year Dropdown */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>Year:</span>
+                  <select
+                    className="form-control"
+                    value={trackingYearFilter}
+                    onChange={(e) => setTrackingYearFilter(e.target.value)}
+                    style={{ padding: '0.35rem 0.55rem', fontSize: '0.82rem', background: 'var(--bg-surface-elevated)', color: '#FFF', borderRadius: '6px' }}
+                  >
+                    <option value="all">All Years</option>
+                    {[2024, 2025, 2026, 2027].map((yr) => (
+                      <option key={yr} value={yr}>{yr}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Clear Active Filters */}
+                {hasActiveFilters && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      setTrackingSearch('');
+                      setTrackingMonthFilter('all');
+                      setTrackingYearFilter('all');
+                    }}
+                    style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', color: 'var(--accent-orange)' }}
+                    title="Clear all filters"
+                  >
+                    <i className="fa-solid fa-xmark" style={{ marginRight: '0.25rem' }}></i> Clear
+                  </button>
+                )}
+
+                <button className="btn btn-secondary" onClick={() => fetchDashboardData()} style={{ padding: '0.35rem 0.75rem', fontSize: '0.82rem' }}>
+                  <i className="fa-solid fa-rotate"></i> Refresh
+                </button>
+              </div>
             </div>
 
-            {journeys.length === 0 ? (
+            {filteredJourneys.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '4rem 1rem', color: 'var(--text-muted)' }}>
-                <i className="fa-solid fa-route fa-3x" style={{ marginBottom: '1rem' }}></i>
-                <p>No active or completed journeys found. Convert a lead and set dates to trigger journey tracking.</p>
+                <i className={`fa-solid ${hasActiveFilters ? 'fa-filter-circle-xmark' : trackingSubTab === 'live' ? 'fa-route' : trackingSubTab === 'upcoming' ? 'fa-calendar-xmark' : 'fa-flag-checkered'} fa-3x`} style={{ marginBottom: '1rem', opacity: 0.4 }}></i>
+                <p style={{ fontSize: '0.95rem' }}>
+                  {hasActiveFilters
+                    ? 'No journeys match the selected filter criteria. Try clearing search or changing month/year.'
+                    : trackingSubTab === 'live'
+                      ? 'No journeys currently on road. Check back when a driver is dispatched.'
+                      : trackingSubTab === 'upcoming'
+                        ? 'No upcoming journeys scheduled. Convert a lead and assign a start date.'
+                        : 'No completed journeys yet.'
+                  }
+                </p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                {['active', 'upcoming', 'completed'].map((cat) => {
-                  const filtered = journeys.filter(j => {
-                    // Only show under Journey Tracking if a driver/vehicle has been assigned
-                    const hasDriver = j.days.some(d => d.driver_id !== null);
-                    if (!hasDriver) return false;
-
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.15rem' }}>
+                {filteredJourneys.map(j => {
                     const info = getJourneyTimelineStatus(j.lead, j.itinerary);
-                    if (cat === 'completed') {
-                      return j.lead.status === 'completed' || info.status === 'completed';
-                    }
-                    return info.status === cat;
-                  });
+                    const activeDayNum = info.dayNumber || 1;
+                    const todayDetails = trackingSubTab === 'completed'
+                      ? (j.days.find(d => d.day_number === (j.itinerary?.total_days || 1)) || {})
+                      : (j.days.find(d => d.day_number === activeDayNum) || {});
 
-                  const categoryTitle = 
-                    cat === 'active' ? '🟢 Active Journeys (On Road)' :
-                    cat === 'upcoming' ? '📅 Upcoming Journeys (Scheduled)' :
-                    '✅ Completed & Ended Journeys';
+                    return (
+                      <div key={j.lead.id} className="glass-card animate-fade-in" style={{
+                        background: 'var(--bg-surface-elevated)',
+                        border: '1px solid var(--border)',
+                        display: 'flex', flexDirection: 'column', gap: '1rem',
+                        padding: '1.25rem', position: 'relative',
+                        opacity: trackingSubTab === 'completed' ? 0.88 : 1
+                      }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <strong style={{ fontSize: '1.1rem', color: '#FFF' }}>{j.lead.client_name}</strong>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
+                            Phone: {j.lead.client_phone} • {j.lead.num_travelers} guest(s)
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <span className={`badge badge-${j.lead.status === 'completed' ? 'completed' : trackingSubTab === 'live' ? 'converted' : 'new'}`}>
+                            {j.lead.status === 'completed' ? 'Completed' : trackingSubTab === 'live' ? 'On Work' : 'Scheduled'}
+                          </span>
+                        </div>
+                      </div>
 
-                  if (filtered.length === 0) return null;
+                      {j.itinerary ? (
+                        <div style={{ background: 'rgba(0,0,0,0.15)', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem' }}>
+                          <div style={{ fontWeight: '600', color: '#FFF' }}>{j.itinerary.title}</div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
+                            <span>Duration: {j.itinerary.total_days} Days</span>
+                            <span style={{ color: 'var(--primary)', fontWeight: '600' }}>Price: Rs. {j.itinerary.price}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: 'var(--accent-orange)', fontSize: '0.85rem' }}>
+                          ⚠️ No itinerary found. Please create one to track driver/hotel allocations.
+                        </div>
+                      )}
 
-                  return (
-                    <div key={cat}>
-                      <h3 style={{ fontSize: '1.1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginBottom: '1rem', color: cat === 'active' ? 'var(--primary)' : cat === 'upcoming' ? 'var(--accent-teal)' : 'var(--text-secondary)', fontWeight: '600' }}>
-                        {categoryTitle} ({filtered.length})
-                      </h3>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
-                        {filtered.map(j => {
-                          const info = getJourneyTimelineStatus(j.lead, j.itinerary);
-                          const activeDayNum = info.dayNumber || 1;
-                          const todayDetails = j.days.find(d => d.day_number === activeDayNum) || {};
-                          
-                          return (
-                            <div key={j.lead.id} className="glass-card animate-fade-in" style={{
-                              background: 'var(--bg-surface-elevated)',
-                              border: '1px solid var(--border)',
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: '1rem',
-                              padding: '1.25rem',
-                              position: 'relative'
-                            }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                  <strong style={{ fontSize: '1.1rem', color: '#FFF' }}>{j.lead.client_name}</strong>
-                                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.15rem' }}>
-                                    Phone: {j.lead.client_phone} • {j.lead.num_travelers} guest(s)
-                                  </div>
-                                </div>
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                  <span className={`badge badge-${j.lead.status === 'completed' ? 'completed' : cat === 'active' ? 'converted' : 'new'}`}>
-                                    {j.lead.status === 'completed' ? 'Completed' : cat === 'active' ? 'On Work' : 'Scheduled'}
-                                  </span>
-                                </div>
+                      {j.itinerary && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
+                            <span style={{ fontWeight: '500', color: 'var(--accent-teal)' }}>{info.text}</span>
+                            <span>{trackingSubTab === 'completed' ? '100' : info.percent}%</span>
+                          </div>
+                          <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${trackingSubTab === 'completed' ? 100 : info.percent}%`, background: 'linear-gradient(90deg, var(--secondary), var(--accent-teal))', borderRadius: '3px' }}></div>
+                          </div>
+                        </div>
+                      )}
+
+                      {j.itinerary && j.days.length > 0 && trackingSubTab !== 'completed' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', fontSize: '0.85rem' }}>
+                          <div style={{ fontWeight: '600', color: '#FFF', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {trackingSubTab === 'live' ? `Today's Schedule (Day ${activeDayNum})` : 'Day 1 Plan Preview'}
+                          </div>
+                          <div>
+                            <span style={{ color: 'var(--text-muted)' }}>Sightseeing: </span>
+                            <span style={{ color: 'var(--text-primary)' }}>{todayDetails.description || 'Sightseeing schedule is being updated.'}</span>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.25rem' }}>
+                            <div style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.1)', padding: '0.5rem', borderRadius: '6px' }}>
+                              <div style={{ color: 'var(--secondary)', fontWeight: '600', fontSize: '0.75rem' }}>
+                                <i className="fa-solid fa-taxi"></i> DISPATCHED TRANSPORT
                               </div>
-
-                              {j.itinerary ? (
-                                <div style={{ background: 'rgba(0,0,0,0.15)', padding: '0.75rem', borderRadius: '6px', fontSize: '0.85rem' }}>
-                                  <div style={{ fontWeight: '600', color: '#FFF' }}>{j.itinerary.title}</div>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem', color: 'var(--text-secondary)' }}>
-                                    <span>Duration: {j.itinerary.total_days} Days</span>
-                                    <span style={{ color: 'var(--primary)', fontWeight: '600' }}>Price: Rs. {j.itinerary.price}</span>
-                                  </div>
+                              {todayDetails.driver_name ? (
+                                <div style={{ marginTop: '0.2rem' }}>
+                                  <div style={{ color: '#FFF', fontWeight: '500' }}>{todayDetails.driver_name}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{todayDetails.vehicle_model}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayDetails.vehicle_number}</div>
+                                  <a
+                                    href={`https://wa.me/${todayDetails.driver_phone.replace(/\D/g, '')}?text=Hi%20${todayDetails.driver_name},%20this%20is%20Sandesh%20Travels%20Admin.%20Regarding%20guest%20${j.lead.client_name}...`}
+                                    target="_blank" rel="noopener noreferrer"
+                                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#25D366', fontSize: '0.75rem', marginTop: '0.25rem', fontWeight: '600' }}
+                                  >
+                                    <i className="fa-brands fa-whatsapp"></i> Chat Driver
+                                  </a>
                                 </div>
                               ) : (
-                                <div style={{ color: 'var(--accent-orange)', fontSize: '0.85rem' }}>
-                                  ⚠️ No itinerary found. Please create one to track driver/hotel allocations.
-                                </div>
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.2rem' }}>No driver assigned</div>
                               )}
-
-                              {j.itinerary && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem' }}>
-                                    <span style={{ fontWeight: '500', color: 'var(--accent-teal)' }}>{info.text}</span>
-                                    <span>{info.percent}%</span>
-                                  </div>
-                                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.05)', borderRadius: '3px', overflow: 'hidden' }}>
-                                    <div style={{ height: '100%', width: `${info.percent}%`, background: 'linear-gradient(90deg, var(--secondary), var(--accent-teal))', borderRadius: '3px' }}></div>
-                                  </div>
-                                </div>
-                              )}
-
-                              {j.itinerary && j.days.length > 0 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', fontSize: '0.85rem' }}>
-                                  <div style={{ fontWeight: '600', color: '#FFF', fontSize: '0.8rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                    {cat === 'active' ? `Today's Schedule (Day ${activeDayNum})` : `Day 1 Plan Preview`}
-                                  </div>
-
-                                  <div>
-                                    <span style={{ color: 'var(--text-muted)' }}>Sightseeing: </span>
-                                    <span style={{ color: 'var(--text-primary)' }}>{todayDetails.description || 'Sightseeing schedule is being updated.'}</span>
-                                  </div>
-
-                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginTop: '0.25rem' }}>
-                                    <div style={{ background: 'rgba(99,102,241,0.05)', border: '1px solid rgba(99,102,241,0.1)', padding: '0.5rem', borderRadius: '6px' }}>
-                                      <div style={{ color: 'var(--secondary)', fontWeight: '600', fontSize: '0.75rem' }}>
-                                        <i className="fa-solid fa-taxi"></i> DISPATCHED TRANSPORT
-                                      </div>
-                                      {todayDetails.driver_name ? (
-                                        <div style={{ marginTop: '0.2rem' }}>
-                                          <div style={{ color: '#FFF', fontWeight: '500' }}>{todayDetails.driver_name}</div>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{todayDetails.vehicle_model}</div>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayDetails.vehicle_number}</div>
-                                          <a 
-                                            href={`https://wa.me/${todayDetails.driver_phone.replace(/\D/g, '')}?text=Hi%20${todayDetails.driver_name},%20this%20is%20Sandesh%20Travels%20Admin.%20Regarding%20guest%20${j.lead.client_name}...`}
-                                            target="_blank" 
-                                            rel="noopener noreferrer"
-                                            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', color: '#25D366', fontSize: '0.75rem', marginTop: '0.25rem', fontWeight: '600' }}
-                                          >
-                                            <i className="fa-brands fa-whatsapp"></i> Chat Driver
-                                          </a>
-                                        </div>
-                                      ) : (
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.2rem' }}>No driver assigned</div>
-                                      )}
-                                    </div>
-
-                                    <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.1)', padding: '0.5rem', borderRadius: '6px' }}>
-                                      <div style={{ color: 'var(--primary)', fontWeight: '600', fontSize: '0.75rem' }}>
-                                        <i className="fa-solid fa-hotel"></i> ACCOMMODATION STAY
-                                      </div>
-                                      {todayDetails.hotel_name ? (
-                                        <div style={{ marginTop: '0.2rem' }}>
-                                          <div style={{ color: '#FFF', fontWeight: '500' }}>{todayDetails.hotel_name}</div>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{todayDetails.hotel_location}</div>
-                                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayDetails.hotel_contact}</div>
-                                        </div>
-                                      ) : (
-                                        <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.2rem' }}>No hotel check-in</div>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-
-                              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
-                                <Link
-                                   href={`/admin/itinerary/${j.lead.id}`}
-                                   className="btn btn-secondary"
-                                   style={{ 
-                                     flexGrow: 1, 
-                                     padding: '0.4rem', 
-                                     fontSize: '0.8rem', 
-                                     color: '#FFF', 
-                                     display: 'inline-flex', 
-                                     alignItems: 'center', 
-                                     justifyContent: 'center', 
-                                     gap: '0.35rem',
-                                     fontWeight: '600' 
-                                   }}
-                                 >
-                                   <i className="fa-solid fa-eye"></i> View Journey Details
-                                 </Link>
-                                <Link
-                                  href={`/admin/invoice/${j.lead.id}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn btn-secondary"
-                                  style={{ 
-                                    padding: '0.4rem 0.6rem', 
-                                    fontSize: '0.8rem', 
-                                    color: '#38bdf8', 
-                                    display: 'inline-flex', 
-                                    alignItems: 'center', 
-                                    gap: '0.3rem', 
-                                    border: '1px solid rgba(56,189,248,0.3)', 
-                                    background: 'rgba(56,189,248,0.05)',
-                                    flexGrow: 1,
-                                    justifyContent: 'center'
-                                  }}
-                                  title="Generate & Print Bill Invoice"
-                                >
-                                  <i className="fa-solid fa-file-invoice-dollar"></i> Bill Invoice
-                                </Link>
-                                <button
-                                   onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id)}
-                                   disabled={actionLoading}
-                                   className="btn btn-secondary"
-                                   style={{ 
-                                     padding: '0.4rem 0.6rem', 
-                                     fontSize: '0.8rem', 
-                                     color: '#25D366', 
-                                     display: 'inline-flex', 
-                                     alignItems: 'center', 
-                                     gap: '0.3rem', 
-                                     border: '1px solid rgba(37,211,102,0.3)', 
-                                     background: 'rgba(37,211,102,0.05)',
-                                     flexGrow: 1,
-                                     justifyContent: 'center'
-                                   }}
-                                   title="Send Acknowledgement Receipt & Driver details via WhatsApp"
-                                 >
-                                   <i className="fa-brands fa-whatsapp"></i> Send Receipt
-                                 </button>
-                              </div>
                             </div>
-                          );
-                        })}
+                            <div style={{ background: 'rgba(16,185,129,0.05)', border: '1px solid rgba(16,185,129,0.1)', padding: '0.5rem', borderRadius: '6px' }}>
+                              <div style={{ color: 'var(--primary)', fontWeight: '600', fontSize: '0.75rem' }}>
+                                <i className="fa-solid fa-hotel"></i> ACCOMMODATION STAY
+                              </div>
+                              {todayDetails.hotel_name ? (
+                                <div style={{ marginTop: '0.2rem' }}>
+                                  <div style={{ color: '#FFF', fontWeight: '500' }}>{todayDetails.hotel_name}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{todayDetails.hotel_location}</div>
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{todayDetails.hotel_contact}</div>
+                                </div>
+                              ) : (
+                                <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '0.2rem' }}>No hotel check-in</div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border)', paddingTop: '0.75rem', flexWrap: 'wrap' }}>
+                        <Link
+                          href={`/admin/itinerary/${j.lead.id}`}
+                          className="btn btn-secondary"
+                          style={{ flexGrow: 1, padding: '0.4rem', fontSize: '0.8rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem', fontWeight: '600' }}
+                        >
+                          <i className="fa-solid fa-eye"></i> View Journey Details
+                        </Link>
+                        <Link
+                          href={`/admin/invoice/${j.lead.id}`}
+                          target="_blank" rel="noopener noreferrer"
+                          className="btn btn-secondary"
+                          style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', color: '#38bdf8', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: '1px solid rgba(56,189,248,0.3)', background: 'rgba(56,189,248,0.05)', flexGrow: 1, justifyContent: 'center' }}
+                        >
+                          <i className="fa-solid fa-file-invoice-dollar"></i> Bill Invoice
+                        </Link>
+                        {trackingSubTab !== 'completed' && (
+                          <button
+                            onClick={() => handleTriggerBackgroundWhatsApp(j.lead.id, j.itinerary.id)}
+                            disabled={actionLoading}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', color: '#25D366', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: '1px solid rgba(37,211,102,0.3)', background: 'rgba(37,211,102,0.05)', flexGrow: 1, justifyContent: 'center' }}
+                          >
+                            <i className="fa-brands fa-whatsapp"></i> Send Receipt
+                          </button>
+                        )}
+                        {j.itinerary && trackingSubTab !== 'completed' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditHistoryItinId(j.itinerary.id);
+                              setEditHistoryDriverName(todayDetails.driver_name || '');
+                              setEditHistoryDriverPhone(todayDetails.driver_phone || '');
+                              setEditHistoryVehicleModel(todayDetails.vehicle_model || '');
+                              setEditHistoryVehicleNumber(todayDetails.vehicle_number || '');
+                              setShowEditHistoryModal(true);
+                            }}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.6rem', fontSize: '0.8rem', color: 'var(--accent-teal)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', border: '1px solid rgba(20,184,166,0.3)', background: 'rgba(20,184,166,0.05)', flexGrow: 1, justifyContent: 'center' }}
+                          >
+                            <i className="fa-solid fa-user-pen"></i> Edit Driver Info
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1879,7 +2207,8 @@ export default function AdminDashboard() {
               </div>
             )}
           </section>
-        )}
+          );
+        })()}
 
         {activeTab === 'dispatch' && (
           <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -2610,6 +2939,7 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
               {[
                 { id: 'revenue', label: '💰 Revenue & Bookings Log', icon: 'fa-file-invoice-dollar' },
+                { id: 'drivers_monthly', label: '👤 Driver Monthly Report', icon: 'fa-id-card-clip' },
                 { id: 'fleet', label: '🚗 Fleet & Driver Report', icon: 'fa-car-side' },
                 { id: 'partners', label: '🤝 B2B Partner Commissions', icon: 'fa-handshake' },
                 { id: 'regions', label: '🌐 Regional Route Performance', icon: 'fa-map' }
@@ -2631,6 +2961,116 @@ export default function AdminDashboard() {
                 </button>
               ))}
             </div>
+
+            {/* Sub-tab: Driver-Wise Monthly Report */}
+            {reportSubTab === 'drivers_monthly' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.05rem', color: '#FFF', margin: 0 }}>Driver-Wise Monthly Performance & Revenue Report</h3>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0 0' }}>
+                      Driver trip counts, total booking value, and breakdown for selected month
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Month:</span>
+                      <select
+                        className="form-control"
+                        value={driverReportMonth}
+                        onChange={(e) => setDriverReportMonth(parseInt(e.target.value, 10))}
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                      >
+                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((mName, mIdx) => (
+                          <option key={mIdx} value={mIdx}>{mName}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Year:</span>
+                      <select
+                        className="form-control"
+                        value={driverReportYear}
+                        onChange={(e) => setDriverReportYear(parseInt(e.target.value, 10))}
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                      >
+                        {[2024, 2025, 2026, 2027].map((yr) => (
+                          <option key={yr} value={yr}>{yr}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={exportDriverMonthlyReportToCSV}
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
+                    >
+                      <i className="fa-solid fa-file-csv" style={{ color: 'var(--accent-teal)', marginRight: '0.35rem' }}></i> Export CSV
+                    </button>
+                  </div>
+                </div>
+
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                        <th>Driver Name</th>
+                        <th>Driver Number</th>
+                        <th>Vehicle Details</th>
+                        <th>No of Tour</th>
+                        <th>Total Amount</th>
+                        <th style={{ textAlign: 'center' }}>View Details</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getMonthlyDriverReportList().map(d => {
+                        const totalAmount = d.tours.reduce((sum, j) => sum + (parseFloat(j.lead.itinerary_price) || 0), 0);
+
+                        return (
+                          <tr key={d.id || d.driver_name} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{d.driver_name}</strong>
+                            </td>
+                            <td>
+                              <span style={{ color: 'var(--accent-teal)', fontWeight: '600' }}>{d.driver_phone || 'N/A'}</span>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#FFF' }}>{d.vehicle_model || 'Vehicle'}</strong>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                            </td>
+                            <td>
+                              {d.tours.length > 0 ? (
+                                <span className="badge badge-assigned" style={{ fontSize: '0.85rem' }}>
+                                  {d.tours.length} Tour{d.tours.length > 1 ? 's' : ''}
+                                </span>
+                              ) : (
+                                <span className="badge badge-new" style={{ fontSize: '0.75rem' }}>0 Tours</span>
+                              )}
+                            </td>
+                            <td>
+                              <strong style={{ color: 'var(--primary)', fontSize: '0.95rem' }}>
+                                Rs. {totalAmount.toLocaleString()}
+                              </strong>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button 
+                                className="btn btn-secondary" 
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', borderRadius: '6px' }}
+                                onClick={() => setSelectedDriverDetails({ driver: d, tours: d.tours })}
+                                title="View Details"
+                              >
+                                <i className="fa-solid fa-eye" style={{ color: 'var(--accent-teal)' }}></i>
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Sub-tab 1: Revenue & Bookings Log */}
             {reportSubTab === 'revenue' && (
@@ -3443,6 +3883,219 @@ export default function AdminDashboard() {
                   disabled={actionLoading}
                 >
                   {actionLoading ? 'Saving...' : 'Save Template'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Driver Monthly Report Details Modal */}
+      {selectedDriverDetails && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(5, 7, 12, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1.5rem'
+        }}>
+          <div className="animate-fade-in glass-card" style={{ maxWidth: '750px', width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: '1.75rem', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.15rem' }}>
+                  <i className="fa-solid fa-id-card" style={{ color: 'var(--accent-teal)', marginRight: '0.5rem' }}></i>
+                  Driver Monthly Breakdown: {selectedDriverDetails.driver.driver_name}
+                </h3>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  Phone: {selectedDriverDetails.driver.driver_phone || 'N/A'} | Vehicle: {selectedDriverDetails.driver.vehicle_model || 'Vehicle'} ({selectedDriverDetails.driver.vehicle_number || 'N/A'})
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedDriverDetails(null)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1rem', background: 'var(--bg-surface-elevated)', padding: '0.75rem 1rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Period: </span>
+                <strong style={{ color: '#FFF', fontSize: '0.9rem' }}>
+                  {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][driverReportMonth]} {driverReportYear}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', gap: '1rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Tours: </span>
+                  <strong style={{ color: 'var(--accent-teal)', fontSize: '0.95rem' }}>{selectedDriverDetails.tours.length}</strong>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Amount: </span>
+                  <strong style={{ color: 'var(--primary)', fontSize: '0.95rem' }}>
+                    Rs. {selectedDriverDetails.tours.reduce((acc, j) => acc + (parseFloat(j.lead.itinerary_price) || 0), 0).toLocaleString()}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {selectedDriverDetails.tours.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
+                <i className="fa-solid fa-car-side" style={{ fontSize: '2.2rem', marginBottom: '0.5rem', opacity: 0.5 }}></i>
+                <p style={{ margin: 0 }}>No tours assigned to this driver during the selected month.</p>
+              </div>
+            ) : (
+              <div className="table-responsive" style={{ maxHeight: '380px', overflowY: 'auto' }}>
+                <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                      <th>Guest Details</th>
+                      <th>Phone Number</th>
+                      <th>Start Date</th>
+                      <th>Itinerary / Route</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Total Amount (Rs.)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedDriverDetails.tours.map(j => (
+                      <tr key={j.lead.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td>
+                          <strong style={{ color: '#FFF' }}>{j.lead.client_name}</strong>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Booking #{j.lead.id}</div>
+                        </td>
+                        <td>
+                          <span style={{ color: 'var(--accent-teal)' }}>{j.lead.client_phone || 'N/A'}</span>
+                        </td>
+                        <td>{j.lead.start_date || 'N/A'}</td>
+                        <td>
+                          <strong style={{ color: '#FFF' }}>{j.itinerary?.title || 'Custom Tour'}</strong>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{j.itinerary?.total_days || 1} Days Tour</div>
+                        </td>
+                        <td>
+                          <span className={`badge badge-${j.lead.status}`}>{j.lead.status.toUpperCase()}</span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: '700', color: 'var(--primary)' }}>
+                          Rs. {(parseFloat(j.lead.itinerary_price) || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
+              <button className="btn btn-secondary" onClick={() => setSelectedDriverDetails(null)}>
+                Close Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Edit Driver History Modal */}
+      {showEditHistoryModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(5, 7, 12, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1.5rem'
+        }}>
+          <div className="animate-fade-in glass-card" style={{ maxWidth: '500px', width: '100%', padding: '1.75rem', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.1rem' }}>
+                <i className="fa-solid fa-user-pen" style={{ color: 'var(--accent-teal)', marginRight: '0.5rem' }}></i>
+                Edit & Lock Historical Driver Info
+              </h3>
+              <button 
+                onClick={() => setShowEditHistoryModal(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              Correct or restore the exact driver name and contact details for this specific trip. This snapshot will be locked permanently and will never change if the driver registry is edited later.
+            </p>
+
+            <form onSubmit={handleSaveDriverHistory} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Driver Name *</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  required
+                  placeholder="e.g. Driver1"
+                  value={editHistoryDriverName}
+                  onChange={(e) => setEditHistoryDriverName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Driver Phone Number</label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. +91 9876543210"
+                  value={editHistoryDriverPhone}
+                  onChange={(e) => setEditHistoryDriverPhone(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Vehicle Model</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Innova Crysta"
+                    value={editHistoryVehicleModel}
+                    onChange={(e) => setEditHistoryVehicleModel(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Vehicle Number</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. SK01PB5155"
+                    value={editHistoryVehicleNumber}
+                    onChange={(e) => setEditHistoryVehicleNumber(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ flex: 1 }}
+                  onClick={() => setShowEditHistoryModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ flex: 1 }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Saving...' : 'Save & Lock History'}
                 </button>
               </div>
             </form>

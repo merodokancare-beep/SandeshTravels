@@ -48,7 +48,10 @@ export class ItineraryModel {
     const res = await query(
       `SELECT id_day.*, 
               h.name as hotel_name, h.location as hotel_location, h.contact as hotel_contact,
-              d.driver_name, d.driver_phone, d.vehicle_number, d.vehicle_model
+              COALESCE(id_day.driver_name_snapshot, d.driver_name) AS driver_name,
+              COALESCE(id_day.driver_phone_snapshot, d.driver_phone) AS driver_phone,
+              COALESCE(id_day.vehicle_number_snapshot, d.vehicle_number) AS vehicle_number,
+              COALESCE(id_day.vehicle_model_snapshot, d.vehicle_model) AS vehicle_model
        FROM itinerary_days id_day
        LEFT JOIN hotels_registry h ON id_day.hotel_id = h.id
        LEFT JOIN drivers_registry d ON id_day.driver_id = d.id
@@ -66,22 +69,54 @@ export class ItineraryModel {
 
   static async createDay({ itineraryId, dayNumber, hotelId, driverId, description, activities }, client = null) {
     const q = client ? client.query.bind(client) : query;
+    let driverNameSnap = null, driverPhoneSnap = null, vehNumSnap = null, vehModelSnap = null;
+    if (driverId) {
+      const driverRes = await q('SELECT * FROM drivers_registry WHERE id = $1', [driverId]);
+      const d = driverRes.rows[0];
+      if (d) {
+        driverNameSnap = d.driver_name;
+        driverPhoneSnap = d.driver_phone;
+        vehNumSnap = d.vehicle_number;
+        vehModelSnap = d.vehicle_model;
+      }
+    }
     const res = await q(
-      `INSERT INTO itinerary_days (itinerary_id, day_number, hotel_id, driver_id, description, activities)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO itinerary_days (itinerary_id, day_number, hotel_id, driver_id, description, activities, driver_name_snapshot, driver_phone_snapshot, vehicle_number_snapshot, vehicle_model_snapshot)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [itineraryId, dayNumber, hotelId || null, driverId || null, description || null, activities || null]
+      [itineraryId, dayNumber, hotelId || null, driverId || null, description || null, activities || null, driverNameSnap, driverPhoneSnap, vehNumSnap, vehModelSnap]
     );
     return res.rows[0];
   }
 
   static async updateDayDriver(itineraryId, dayNumber, driverId, client = null) {
     const q = client ? client.query.bind(client) : query;
+    if (driverId) {
+      const driverRes = await q('SELECT * FROM drivers_registry WHERE id = $1', [driverId]);
+      const d = driverRes.rows[0];
+      if (d) {
+        await q(
+          `UPDATE itinerary_days 
+           SET driver_id = $1,
+               driver_name_snapshot = $2,
+               driver_phone_snapshot = $3,
+               vehicle_number_snapshot = $4,
+               vehicle_model_snapshot = $5
+           WHERE itinerary_id = $6 AND day_number = $7`,
+          [driverId, d.driver_name, d.driver_phone, d.vehicle_number, d.vehicle_model, itineraryId, dayNumber]
+        );
+        return;
+      }
+    }
     await q(
       `UPDATE itinerary_days 
-       SET driver_id = $1 
-       WHERE itinerary_id = $2 AND day_number = $3`,
-      [driverId || null, itineraryId, dayNumber]
+       SET driver_id = NULL,
+           driver_name_snapshot = NULL,
+           driver_phone_snapshot = NULL,
+           vehicle_number_snapshot = NULL,
+           vehicle_model_snapshot = NULL
+       WHERE itinerary_id = $1 AND day_number = $2`,
+      [itineraryId, dayNumber]
     );
   }
 
