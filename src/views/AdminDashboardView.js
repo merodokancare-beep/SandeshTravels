@@ -105,6 +105,14 @@ export default function AdminDashboard() {
   }, [isWalkInMultiDropdownOpen]);
   const [newLeadPartnerId, setNewLeadPartnerId] = useState('');
 
+  // Referral Partner Master form states
+  const [partnerFormName, setPartnerFormName] = useState('');
+  const [partnerFormContact, setPartnerFormContact] = useState('');
+  const [partnerFormCommission, setPartnerFormCommission] = useState(10);
+  const [partnerFormUsername, setPartnerFormUsername] = useState('');
+  const [partnerFormPassword, setPartnerFormPassword] = useState('');
+  const [editingPartner, setEditingPartner] = useState(null);
+
   // Template CRUD form states
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState(null);
@@ -764,6 +772,83 @@ export default function AdminDashboard() {
     }
   };
 
+  // ── Referral Partner Master CRUD ──────────────────────────────────────────
+  const handlePartnerSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const isEdit = !!editingPartner;
+      const res = await fetch('/api/admin/partners', {
+        method: isEdit ? 'PUT' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(isEdit
+          ? { id: editingPartner.id, hotelName: partnerFormName, contact: partnerFormContact, commissionRate: partnerFormCommission }
+          : { hotelName: partnerFormName, contact: partnerFormContact, commissionRate: partnerFormCommission, username: partnerFormUsername, password: partnerFormPassword }
+        ),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(isEdit ? `Partner "${partnerFormName}" updated.` : `Partner "${partnerFormName}" registered.`);
+        setPartnerFormName('');
+        setPartnerFormContact('');
+        setPartnerFormCommission(10);
+        setPartnerFormUsername('');
+        setPartnerFormPassword('');
+        setEditingPartner(null);
+        fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to save partner.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleEditPartnerClick = (p) => {
+    setEditingPartner(p);
+    setPartnerFormName(p.hotel_name || '');
+    setPartnerFormContact(p.contact || '');
+    setPartnerFormCommission(parseFloat(p.commission_rate) || 10);
+    setPartnerFormUsername(p.username || '');
+    setPartnerFormPassword('');
+  };
+
+  const handleCancelPartnerEdit = () => {
+    setEditingPartner(null);
+    setPartnerFormName('');
+    setPartnerFormContact('');
+    setPartnerFormCommission(10);
+    setPartnerFormUsername('');
+    setPartnerFormPassword('');
+  };
+
+  const handleDeletePartner = async (id, name) => {
+    if (!window.confirm(`Delete partner "${name}"? This cannot be undone.`)) return;
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/partners?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`Partner "${name}" deleted.`);
+        fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to delete partner.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleDriverSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -1247,6 +1332,13 @@ export default function AdminDashboard() {
               style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
             >
               <i className="fa-solid fa-hotel"></i> Hotels Registry
+            </button>
+            <button 
+              onClick={() => setActiveTab('partners')} 
+              className={`nav-link ${activeTab === 'partners' ? 'active' : ''}`}
+              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+            >
+              <i className="fa-solid fa-handshake"></i> Partners Master
             </button>
             <button 
               onClick={() => setActiveTab('drivers')} 
@@ -2584,6 +2676,179 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* ── Referral Partners Master Tab ─────────────────────────────── */}
+        {activeTab === 'partners' && (
+          <div className="grid-2 animate-fade-in">
+            {/* Add / Edit Partner Form */}
+            <section className="glass-card">
+              <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem' }}>
+                <i
+                  className={editingPartner ? 'fa-solid fa-user-pen' : 'fa-solid fa-circle-plus'}
+                  style={{ color: editingPartner ? 'var(--accent-teal)' : 'var(--secondary)', marginRight: '0.5rem' }}
+                ></i>
+                {editingPartner ? 'Edit Referral Partner' : 'Register Referral Partner'}
+              </h2>
+              <form onSubmit={handlePartnerSubmit}>
+                <div className="form-group">
+                  <label htmlFor="rp-name">Hotel / Agency Name *</label>
+                  <input
+                    type="text"
+                    id="rp-name"
+                    className="form-control"
+                    placeholder="e.g. Pokhara Lakeside Resort"
+                    value={partnerFormName}
+                    onChange={(e) => setPartnerFormName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="rp-contact">Contact / Phone</label>
+                  <input
+                    type="text"
+                    id="rp-contact"
+                    className="form-control"
+                    placeholder="e.g. +977 61-46xxxx"
+                    value={partnerFormContact}
+                    onChange={(e) => setPartnerFormContact(e.target.value)}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="rp-commission">Commission Rate (%)</label>
+                  <input
+                    type="number"
+                    id="rp-commission"
+                    className="form-control"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={partnerFormCommission}
+                    onChange={(e) => setPartnerFormCommission(parseFloat(e.target.value) || 0)}
+                  />
+                </div>
+                {!editingPartner && (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="rp-username">Login Username *</label>
+                      <input
+                        type="text"
+                        id="rp-username"
+                        className="form-control"
+                        placeholder="e.g. lakeside_resort"
+                        value={partnerFormUsername}
+                        onChange={(e) => setPartnerFormUsername(e.target.value.toLowerCase().replace(/\s/g, '_'))}
+                        required={!editingPartner}
+                      />
+                      <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                        Partner will use this to log in to their portal.
+                      </span>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="rp-password">Login Password *</label>
+                      <input
+                        type="password"
+                        id="rp-password"
+                        className="form-control"
+                        placeholder="Set initial password"
+                        value={partnerFormPassword}
+                        onChange={(e) => setPartnerFormPassword(e.target.value)}
+                        required={!editingPartner}
+                      />
+                    </div>
+                  </>
+                )}
+                <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.25rem' }}>
+                  {editingPartner && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ flex: 1 }}
+                      onClick={handleCancelPartnerEdit}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    style={{ flex: 1, background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
+                    disabled={actionLoading}
+                  >
+                    {actionLoading ? 'Saving...' : editingPartner ? 'Update Partner' : 'Register Partner'}
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            {/* Partners List */}
+            <section className="glass-card" style={{ display: 'flex', flexDirection: 'column' }}>
+              <h2 style={{ fontSize: '1.25rem', marginBottom: '1.5rem' }}>
+                <i className="fa-solid fa-database" style={{ color: 'var(--primary)', marginRight: '0.5rem' }}></i>
+                Registered Referral Partners
+                <span style={{ fontSize: '0.8rem', fontWeight: 400, color: 'var(--text-muted)', marginLeft: '0.6rem' }}>
+                  ({partners.length} total)
+                </span>
+              </h2>
+              {partners.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--text-muted)', flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <i className="fa-solid fa-handshake fa-2x" style={{ marginBottom: '1rem' }}></i>
+                  <p>No referral partners registered yet.</p>
+                  <p style={{ fontSize: '0.8rem' }}>Add a B2B hotel or agency above to appear in the booking dropdown.</p>
+                </div>
+              ) : (
+                <div className="table-container" style={{ maxHeight: '420px', overflowY: 'auto' }}>
+                  <table className="custom-table">
+                    <thead>
+                      <tr>
+                        <th>Hotel / Agency</th>
+                        <th>Contact</th>
+                        <th>Commission</th>
+                        <th>Username</th>
+                        <th style={{ textAlign: 'right' }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partners.map((p) => (
+                        <tr key={p.id}>
+                          <td style={{ fontWeight: '600', color: '#FFF' }}>{p.hotel_name}</td>
+                          <td style={{ color: 'var(--text-secondary)', fontSize: '0.83rem' }}>{p.contact || '—'}</td>
+                          <td>
+                            <span className="badge badge-converted" style={{ fontSize: '0.75rem' }}>
+                              {parseFloat(p.commission_rate) || 10}%
+                            </span>
+                          </td>
+                          <td style={{ color: 'var(--accent-teal)', fontSize: '0.82rem' }}>{p.username}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem' }}
+                                onClick={() => handleEditPartnerClick(p)}
+                              >
+                                <i className="fa-solid fa-pen"></i> Edit
+                              </button>
+                              <button
+                                className="btn"
+                                style={{ padding: '0.25rem 0.6rem', fontSize: '0.75rem', background: 'rgba(239,68,68,0.12)', color: '#f87171', border: '1px solid rgba(239,68,68,0.3)' }}
+                                onClick={() => handleDeletePartner(p.id, p.hotel_name)}
+                              >
+                                <i className="fa-solid fa-trash"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <div style={{ marginTop: '1rem', padding: '0.75rem', background: 'rgba(16,185,129,0.06)', borderRadius: 'var(--border-radius-sm)', border: '1px solid rgba(16,185,129,0.15)', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                <i className="fa-solid fa-circle-info" style={{ color: 'var(--primary)', marginRight: '0.4rem' }}></i>
+                All registered partners appear in the <strong style={{ color: 'var(--text-secondary)' }}>Referral Partner</strong> dropdown when booking a new guest. The default selection is always <strong style={{ color: 'var(--text-secondary)' }}>Direct Tourist</strong>.
+              </div>
+            </section>
+          </div>
+        )}
+
         {activeTab === 'drivers' && (
           <div className="grid-2 animate-fade-in">
             {/* Add/Edit Driver */}
@@ -3502,7 +3767,7 @@ export default function AdminDashboard() {
               <div className="form-group">
                 <label style={{ display: 'block', marginBottom: '0.4rem' }}>Filter Packages by Region</label>
                 <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                  {['All', 'North', 'South', 'East', 'West', 'Central'].map(r => (
+                  {['All', ...Array.from(new Set(templates.map(t => t.region).filter(Boolean))).sort()].map(r => (
                     <button
                       key={r}
                       type="button"
