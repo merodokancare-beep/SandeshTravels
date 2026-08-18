@@ -3745,12 +3745,11 @@ export default function AdminDashboard() {
               </div>
 
               <div className="form-group">
-                <label style={{ fontWeight: '600' }}>Referral Partner / Lead Source *</label>
+                <label style={{ fontWeight: '600' }}>Referral Partner / Lead Source</label>
                 <select 
                   className="form-control"
                   value={newLeadPartnerId}
                   onChange={(e) => setNewLeadPartnerId(e.target.value)}
-                  required
                 >
                   <option value="">Direct Tourist</option>
                   {partners.map(p => (
