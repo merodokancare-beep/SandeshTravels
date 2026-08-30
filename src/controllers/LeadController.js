@@ -131,7 +131,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -149,6 +149,7 @@ export class LeadController {
 
       const initialStatus = targetTemplateIds.length > 0 ? 'quoted' : 'new';
       const parsedPartnerId = partnerId ? parseInt(partnerId, 10) : null;
+      const determinedSource = source || (parsedPartnerId ? 'partner' : 'direct');
 
       const lead = await LeadModel.create({
         partnerId: parsedPartnerId,
@@ -157,7 +158,11 @@ export class LeadController {
         travelDates,
         numTravelers: guestsCount,
         status: initialStatus,
-        startDate: startDate || null
+        startDate: startDate || null,
+        source: determinedSource,
+        packageName,
+        vehicleType,
+        notes
       }, client);
 
       // Generate itinerary if templates selected (supports multi-region)
@@ -244,7 +249,7 @@ export class LeadController {
 
   static async publicCreateLead(request) {
     try {
-      const { clientName, clientPhone, travelDates, numTravelers } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, packageName, vehicleType, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -261,7 +266,12 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers: travelersCount,
-        status: 'new'
+        status: 'new',
+        startDate: startDate || null,
+        source: 'website',
+        packageName,
+        vehicleType,
+        notes
       });
 
       return NextResponse.json({
@@ -287,7 +297,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -304,7 +314,10 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers: travelersCount,
-        status: 'new'
+        status: 'new',
+        startDate: startDate || null,
+        source: 'partner',
+        notes
       });
 
       return NextResponse.json({

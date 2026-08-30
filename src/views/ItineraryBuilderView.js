@@ -993,9 +993,17 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   <div>
                     <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>SOURCE</label>
                     {lead?.partner_name ? (
-                      <span className="badge badge-converted">Referral: {lead.partner_name}</span>
+                      <span className="badge badge-partner">
+                        <i className="fa-solid fa-hotel" style={{ marginRight: '0.3rem' }}></i> B2B: {lead.partner_name}
+                      </span>
+                    ) : (lead?.source === 'website' || lead?.travel_dates?.includes('Website') || lead?.travel_dates?.includes('🌐')) ? (
+                      <span className="badge badge-website">
+                        <i className="fa-solid fa-globe" style={{ marginRight: '0.3rem' }}></i> Website Online
+                      </span>
                     ) : (
-                      <span className="badge badge-new">B2C Direct Lead</span>
+                      <span className="badge badge-direct">
+                        <i className="fa-solid fa-phone" style={{ marginRight: '0.3rem' }}></i> Direct Walk-in
+                      </span>
                     )}
                   </div>
                 </div>

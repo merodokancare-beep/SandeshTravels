@@ -62,6 +62,7 @@ export default function AdminDashboard() {
   // Search/Filter states
   const [leadsSearch, setLeadsSearch] = useState('');
   const [leadsFilterStatus, setLeadsFilterStatus] = useState('all');
+  const [leadsFilterSource, setLeadsFilterSource] = useState('all');
 
   // Hotel form states
   const [hotelName, setHotelName] = useState('');
@@ -1113,13 +1114,92 @@ export default function AdminDashboard() {
 
   const next7Days = getNext7Days();
 
+  // Helper to extract lead source details and tags
+  const getLeadSourceInfo = (lead) => {
+    const isWebsite = lead.source === 'website' || 
+      (lead.travel_dates && (lead.travel_dates.includes('Website') || lead.travel_dates.includes('🌐')));
+
+    if (lead.partner_name || lead.partner_id) {
+      return {
+        type: 'partner',
+        label: 'B2B Partner',
+        badgeClass: 'badge-partner',
+        icon: 'fa-hotel',
+        name: lead.partner_name || 'B2B Hotel',
+        rate: lead.commission_rate
+      };
+    }
+
+    if (isWebsite) {
+      let pkg = lead.package_name;
+      let vehicle = lead.vehicle_type;
+      let notes = lead.notes;
+
+      if (!pkg && lead.travel_dates) {
+        const matchPkg = lead.travel_dates.match(/\[([^\]]+)\]/g);
+        if (matchPkg && matchPkg.length > 0) {
+          const pkgMatch = matchPkg.find(m => !m.includes('Website') && !m.includes('Vehicle'));
+          if (pkgMatch) {
+            pkg = pkgMatch.replace('[', '').replace(']', '');
+          }
+        }
+      }
+
+      if (!vehicle && lead.travel_dates && lead.travel_dates.includes('Vehicle:')) {
+        const vMatch = lead.travel_dates.match(/Vehicle:\s*([^\]|]+)/);
+        if (vMatch) {
+          vehicle = vMatch[1].trim();
+        }
+      }
+
+      return {
+        type: 'website',
+        label: 'Website Online',
+        badgeClass: 'badge-website',
+        icon: 'fa-globe',
+        sourceName: 'Sandesh Travels',
+        pkg,
+        vehicle,
+        notes
+      };
+    }
+
+    return {
+      type: 'direct',
+      label: 'Direct Guest',
+      badgeClass: 'badge-direct',
+      icon: 'fa-phone',
+      sourceName: 'Walk-in / Direct'
+    };
+  };
+
+  const getCleanTravelDates = (lead) => {
+    if (lead.start_date) {
+      return `Starts: ${new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+    if (!lead.travel_dates) return 'Dates not set';
+
+    if (lead.travel_dates.includes('|')) {
+      const parts = lead.travel_dates.split('|').map(p => p.trim());
+      const datePart = parts.find(p => !p.includes('Website') && !p.includes('[') && !p.includes('Notes:'));
+      if (datePart) return datePart;
+    }
+    const cleaned = lead.travel_dates.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
+    return cleaned || 'Dates not set';
+  };
+
   // Filtered Leads list
   const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.client_name.toLowerCase().includes(leadsSearch.toLowerCase()) || 
-                          lead.client_phone.includes(leadsSearch) ||
-                          (lead.partner_name && lead.partner_name.toLowerCase().includes(leadsSearch.toLowerCase()));
+    const srcInfo = getLeadSourceInfo(lead);
+    const query = leadsSearch.toLowerCase();
+    const matchesSearch = lead.client_name.toLowerCase().includes(query) || 
+                          lead.client_phone.includes(query) ||
+                          (lead.partner_name && lead.partner_name.toLowerCase().includes(query)) ||
+                          (srcInfo.pkg && srcInfo.pkg.toLowerCase().includes(query)) ||
+                          (srcInfo.label && srcInfo.label.toLowerCase().includes(query));
     const matchesStatus = leadsFilterStatus === 'all' || lead.status === leadsFilterStatus;
-    return matchesSearch && matchesStatus;
+    const matchesSource = leadsFilterSource === 'all' || srcInfo.type === leadsFilterSource;
+    return matchesSearch && matchesStatus && matchesSource;
   });
 
   // Calculate high level metrics
@@ -1399,12 +1479,24 @@ export default function AdminDashboard() {
               <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
                 <input
                   type="text"
-                  placeholder="Search name, phone, or hotel..."
+                  placeholder="Search name, phone, hotel, or package..."
                   className="form-control"
-                  style={{ width: '240px', padding: '0.5rem 1rem' }}
+                  style={{ width: '250px', padding: '0.5rem 1rem' }}
                   value={leadsSearch}
                   onChange={(e) => setLeadsSearch(e.target.value)}
                 />
+
+                <select
+                  className="form-control"
+                  style={{ width: '160px', padding: '0.5rem' }}
+                  value={leadsFilterSource}
+                  onChange={(e) => setLeadsFilterSource(e.target.value)}
+                >
+                  <option value="all">All Sources</option>
+                  <option value="website">🌐 Website (Online)</option>
+                  <option value="partner">🏢 B2B Partners</option>
+                  <option value="direct">📞 Direct (Walk-in / Phone)</option>
+                </select>
                 
                 <select
                   className="form-control"
@@ -1441,7 +1533,9 @@ export default function AdminDashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLeads.map((lead) => (
+                    {filteredLeads.map((lead) => {
+                      const srcInfo = getLeadSourceInfo(lead);
+                      return (
                       <tr key={lead.id}>
                         <td>
                           <div style={{ fontWeight: '600', color: '#FFF' }}>{lead.client_name}</div>
@@ -1449,27 +1543,48 @@ export default function AdminDashboard() {
                         </td>
                         <td>
                           <div>
-                            {lead.start_date ? (
-                              <span style={{ color: 'var(--accent-teal)', fontWeight: '500' }}>
-                                Starts: {new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                              </span>
-                            ) : (
-                              <span>{lead.travel_dates || 'Dates not set'}</span>
-                            )}
+                            <span style={{ color: 'var(--accent-teal)', fontWeight: '500' }}>
+                              {getCleanTravelDates(lead)}
+                            </span>
                           </div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{lead.num_travelers} guest(s)</div>
                         </td>
                         <td>
-                          {lead.partner_name ? (
+                          {srcInfo.type === 'partner' ? (
                             <div>
-                              <span style={{ color: 'var(--primary)', fontWeight: 500 }}>B2B: </span>
-                              {lead.partner_name}
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rate: {lead.commission_rate}%</div>
+                              <span className="badge badge-partner" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
+                                <i className="fa-solid fa-hotel" style={{ marginRight: '0.3rem' }}></i> B2B Partner
+                              </span>
+                              <div style={{ fontWeight: '600', color: '#FFF', marginTop: '0.2rem' }}>{srcInfo.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rate: {srcInfo.rate || 0}%</div>
+                            </div>
+                          ) : srcInfo.type === 'website' ? (
+                            <div>
+                              <span className="badge badge-website" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
+                                <i className="fa-solid fa-globe" style={{ marginRight: '0.3rem' }}></i> Website Online
+                              </span>
+                              <div style={{ fontSize: '0.78rem', color: '#38bdf8', marginTop: '0.25rem', fontWeight: 600 }}>
+                                {srcInfo.sourceName}
+                              </div>
+                              {srcInfo.pkg && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', marginTop: '0.15rem' }}>
+                                  📦 {srcInfo.pkg}
+                                </div>
+                              )}
+                              {srcInfo.vehicle && (
+                                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                  🚗 {srcInfo.vehicle}
+                                </div>
+                              )}
                             </div>
                           ) : (
                             <div>
-                              <span style={{ color: 'var(--secondary)', fontWeight: 500 }}>B2C: </span>
-                              Direct Guest
+                              <span className="badge badge-direct" style={{ fontSize: '0.7rem', padding: '0.15rem 0.5rem' }}>
+                                <i className="fa-solid fa-phone" style={{ marginRight: '0.3rem' }}></i> Direct Guest
+                              </span>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                                Walk-in / Phone
+                              </div>
                             </div>
                           )}
                         </td>
@@ -1597,7 +1712,8 @@ export default function AdminDashboard() {
                           </div>
                         </td>
                       </tr>
-                    ))}
+                    );
+                    })}
                   </tbody>
                 </table>
               </div>

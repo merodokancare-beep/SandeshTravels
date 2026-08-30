@@ -166,7 +166,25 @@ export async function initDb() {
     await client.query(`
       ALTER TABLE leads 
       ADD COLUMN IF NOT EXISTS start_date DATE,
-      ADD COLUMN IF NOT EXISTS converted_at DATE;
+      ADD COLUMN IF NOT EXISTS converted_at DATE,
+      ADD COLUMN IF NOT EXISTS source VARCHAR(50) DEFAULT 'direct',
+      ADD COLUMN IF NOT EXISTS package_name VARCHAR(150),
+      ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS notes TEXT,
+      ALTER COLUMN travel_dates TYPE TEXT,
+      ALTER COLUMN client_phone TYPE VARCHAR(100),
+      ALTER COLUMN client_name TYPE VARCHAR(255);
+
+      -- Backfill source column for website and partner leads
+      UPDATE leads 
+      SET source = 'website' 
+      WHERE (source IS NULL OR source = 'direct') 
+        AND (travel_dates LIKE '%Website%' OR travel_dates LIKE '%[Website%' OR travel_dates LIKE '%🌐%');
+
+      UPDATE leads 
+      SET source = 'partner' 
+      WHERE (source IS NULL OR source = 'direct') 
+        AND partner_id IS NOT NULL;
 
       ALTER TABLE itinerary_days 
       ADD COLUMN IF NOT EXISTS driver_name_snapshot VARCHAR(100),

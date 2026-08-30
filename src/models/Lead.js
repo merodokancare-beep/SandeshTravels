@@ -20,7 +20,15 @@ export class LeadModel {
 
   static async getById(id, client = null) {
     const q = client ? client.query.bind(client) : query;
-    const res = await q('SELECT * FROM leads WHERE id = $1', [id]);
+    const res = await q(
+      `SELECT l.*, 
+              p.hotel_name as partner_name, 
+              p.commission_rate
+       FROM leads l
+       LEFT JOIN partners p ON l.partner_id = p.id
+       WHERE l.id = $1`,
+      [id]
+    );
     return res.rows[0] || null;
   }
 
@@ -34,20 +42,21 @@ export class LeadModel {
     return res.rows;
   }
 
-  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null }, client = null) {
+  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
+    const determinedSource = source || (partnerId ? 'partner' : 'direct');
     const res = await q(
-      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate]
+      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes]
     );
     return res.rows[0];
   }
 
   static async update(id, fields, client = null) {
     const q = client ? client.query.bind(client) : query;
-    const { clientName, clientPhone, travelDates, numTravelers, status, startDate } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes } = fields;
 
     const updates = [];
     const values = [];
@@ -79,6 +88,22 @@ export class LeadModel {
     if (startDate !== undefined) {
       updates.push(`start_date = $${idx++}`);
       values.push(startDate || null);
+    }
+    if (source !== undefined) {
+      updates.push(`source = $${idx++}`);
+      values.push(source);
+    }
+    if (packageName !== undefined) {
+      updates.push(`package_name = $${idx++}`);
+      values.push(packageName);
+    }
+    if (vehicleType !== undefined) {
+      updates.push(`vehicle_type = $${idx++}`);
+      values.push(vehicleType);
+    }
+    if (notes !== undefined) {
+      updates.push(`notes = $${idx++}`);
+      values.push(notes);
     }
 
     if (updates.length === 0) {
