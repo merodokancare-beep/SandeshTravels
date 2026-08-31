@@ -27,12 +27,52 @@ export default function AdminDashboard() {
   const [fleetStartDates, setFleetStartDates] = useState({});
   const [calendarStartDate, setCalendarStartDate] = useState(getTodayDateString());
   const [bookModalTemplateRegion, setBookModalTemplateRegion] = useState('All');
-  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports'
+  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports', 'users'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [toasts, setToasts] = useState([]);
+
+  // Staff & Role-Based Access Control states
+  const [staffUsers, setStaffUsers] = useState([]);
+  const [leadsFilterAttendee, setLeadsFilterAttendee] = useState('all'); // 'all', 'unattended', 'mine', or user ID
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [userFormName, setUserFormName] = useState('');
+  const [userFormUsername, setUserFormUsername] = useState('');
+  const [userFormPassword, setUserFormPassword] = useState('');
+  const [userFormPhone, setUserFormPhone] = useState('');
+  const [userFormRole, setUserFormRole] = useState('employee');
+  const [userFormModules, setUserFormModules] = useState(['crm', 'itinerary']);
+  const [userFormIsActive, setUserFormIsActive] = useState(true);
+
+  // Employee Performance Report states
+  const [employeeReportMonth, setEmployeeReportMonth] = useState(new Date().getMonth());
+  const [employeeReportYear, setEmployeeReportYear] = useState(new Date().getFullYear());
+  const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState(null);
+
+  const SYSTEM_MODULES = [
+    { key: 'crm', label: 'Leads CRM', icon: 'fa-address-book', desc: 'Manage incoming enquiries, attendee pickup & conversions' },
+    { key: 'fleet', label: 'Fleet Schedule', icon: 'fa-car-side', desc: 'Calendar timeline and vehicle availability grid' },
+    { key: 'dispatch', label: 'Fleet Assignment', icon: 'fa-key', desc: 'Assign driver and vehicle fleet to itineraries' },
+    { key: 'tracking', label: 'Journey Tracking', icon: 'fa-route', desc: 'Live, upcoming, and completed journey tracking' },
+    { key: 'hotels', label: 'Hotels Registry', icon: 'fa-hotel', desc: 'Directory of partner and registered hotels' },
+    { key: 'partners', label: 'Partners Master', icon: 'fa-handshake', desc: 'B2B referral hotels and commission rates' },
+    { key: 'drivers', label: 'Drivers Registry', icon: 'fa-id-card', desc: 'Driver contact and vehicle ownership directory' },
+    { key: 'templates', label: 'Itinerary Master', icon: 'fa-compass', desc: 'Pre-defined regional travel templates' },
+    { key: 'reports', label: 'Reports & Analytics', icon: 'fa-chart-pie', desc: 'Revenue, driver tours, and employee performance' }
+  ];
+
+  const canAccess = (moduleKey) => {
+    if (!admin) return true;
+    if (admin.role === 'admin') return true;
+    if (moduleKey === 'users') return false;
+    const userMods = Array.isArray(admin.modules) ? admin.modules : [];
+    if (moduleKey === 'leads' || moduleKey === 'crm') return userMods.includes('crm') || userMods.includes('leads');
+    if (moduleKey === 'dispatch' || moduleKey === 'itinerary') return userMods.includes('dispatch') || userMods.includes('itinerary');
+    return userMods.includes(moduleKey);
+  };
 
   const addToast = (message, type = 'info', duration = 6000, action = null, title = null) => {
     if (!message) return;
@@ -63,6 +103,174 @@ export default function AdminDashboard() {
   const [leadsSearch, setLeadsSearch] = useState('');
   const [leadsFilterStatus, setLeadsFilterStatus] = useState('all');
   const [leadsFilterSource, setLeadsFilterSource] = useState('all');
+
+  // Real-time Lead Radar & Sound/Voice Alert states
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [desktopNotifPermission, setDesktopNotifPermission] = useState('default');
+  const knownLeadIdsRef = useRef(null);
+  const soundEnabledRef = useRef(soundEnabled);
+  const voiceEnabledRef = useRef(voiceEnabled);
+
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+
+  useEffect(() => {
+    voiceEnabledRef.current = voiceEnabled;
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedSound = localStorage.getItem('sandesh_sound_alerts');
+      if (savedSound !== null) setSoundEnabled(savedSound === 'true');
+      const savedVoice = localStorage.getItem('sandesh_voice_alerts');
+      if (savedVoice !== null) setVoiceEnabled(savedVoice === 'true');
+      if ('Notification' in window) {
+        setDesktopNotifPermission(Notification.permission);
+      }
+    }
+  }, []);
+
+  const toggleSound = () => {
+    const next = !soundEnabled;
+    setSoundEnabled(next);
+    if (typeof window !== 'undefined') localStorage.setItem('sandesh_sound_alerts', String(next));
+    if (next) playChimeSound();
+  };
+
+  const toggleVoice = () => {
+    const next = !voiceEnabled;
+    setVoiceEnabled(next);
+    if (typeof window !== 'undefined') localStorage.setItem('sandesh_voice_alerts', String(next));
+    if (next && typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance('Voice announcements enabled.');
+      u.rate = 1.0;
+      window.speechSynthesis.speak(u);
+    }
+  };
+
+  const requestDesktopPermission = () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      Notification.requestPermission().then(permission => {
+        setDesktopNotifPermission(permission);
+        if (permission === 'granted') {
+          addToast('Desktop pop-up notifications enabled for incoming leads!', 'success', 5000, null, '🔔 Notifications Active');
+        }
+      });
+    }
+  };
+
+  const playChimeSound = () => {
+    if (!soundEnabledRef.current || typeof window === 'undefined') return;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+      
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.exponentialRampToValueAtTime(880, now + 0.15); // A5
+      gain1.gain.setValueAtTime(0.35, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.6);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'triangle';
+      osc2.frequency.setValueAtTime(1174.66, now + 0.15); // D6
+      gain2.gain.setValueAtTime(0.25, now + 0.15);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.15);
+      osc2.stop(now + 0.9);
+    } catch (e) {
+      console.warn('Audio synthesis notice:', e);
+    }
+  };
+
+  const speakNewLead = (clientName, srcInfo) => {
+    if (!voiceEnabledRef.current || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      let text = `New travel enquiry received from ${clientName || 'a guest'}`;
+      if (srcInfo?.pkg) {
+        text += ` for package ${srcInfo.pkg}`;
+      } else if (srcInfo?.type === 'website') {
+        text += ` on the website`;
+      }
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.pitch = 1.05;
+      utterance.lang = 'en-US';
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis notice:', e);
+    }
+  };
+
+  const sendDesktopNotification = (title, body, leadId) => {
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        const notif = new Notification(title, {
+          body: body,
+          icon: '/logo.png',
+          tag: `lead-${leadId || Date.now()}`
+        });
+        notif.onclick = () => {
+          window.focus();
+          if (leadId) router.push(`/admin/itinerary/${leadId}`);
+          notif.close();
+        };
+      } catch (e) {
+        console.warn('Desktop notification notice:', e);
+      }
+    }
+  };
+
+  const triggerLeadAlert = (newLead) => {
+    const srcInfo = getLeadSourceInfo(newLead);
+    playChimeSound();
+    speakNewLead(newLead.client_name, srcInfo);
+    sendDesktopNotification(
+      `🔔 New Lead: ${newLead.client_name}`,
+      `${srcInfo.pkg ? `Package: ${srcInfo.pkg} | ` : ''}Phone: ${newLead.client_phone} | Source: ${srcInfo.label}`,
+      newLead.id
+    );
+    addToast(
+      `New inquiry received from ${newLead.client_name} (${newLead.client_phone}) — ${srcInfo.pkg || srcInfo.label}`,
+      'success',
+      12000,
+      { label: 'Build Itinerary', onClick: () => router.push(`/admin/itinerary/${newLead.id}`) },
+      '🚀 New Lead Alert!'
+    );
+  };
+
+  const handleTestAlert = () => {
+    playChimeSound();
+    speakNewLead('Ramesh Sharma', { pkg: 'North Sikkim 4D/3N', type: 'website' });
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission !== 'granted') {
+        Notification.requestPermission().then(p => {
+          setDesktopNotifPermission(p);
+          if (p === 'granted') {
+            sendDesktopNotification('🔔 Test Notification', 'Sandesh Travels audio and voice alerts are working perfectly!', null);
+          }
+        });
+      } else {
+        sendDesktopNotification('🔔 Test Notification', 'Sandesh Travels audio and voice alerts are working perfectly!', null);
+      }
+    }
+    addToast('Playing test sound chime & voice announcement...', 'info', 5000, null, '🔊 Alert Test');
+  };
 
   // Hotel form states
   const [hotelName, setHotelName] = useState('');
@@ -353,10 +561,257 @@ export default function AdminDashboard() {
     document.body.removeChild(link);
   };
 
+  const getMonthlyEmployeeReportList = () => {
+    const employeeMap = {};
+
+    staffUsers.forEach(u => {
+      employeeMap[String(u.id)] = {
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        role: u.role,
+        modules: u.modules,
+        attendedCount: 0,
+        convertedCount: 0,
+        convertedRevenue: 0,
+        attendedLeads: [],
+        convertedLeads: []
+      };
+    });
+
+    leads.forEach(l => {
+      const dateToCheck = l.attended_at || l.converted_at || l.created_at;
+      if (!dateToCheck) return;
+      const d = new Date(dateToCheck);
+      if (d.getFullYear() !== employeeReportYear || d.getMonth() !== employeeReportMonth) return;
+
+      const attId = l.attended_by ? String(l.attended_by) : null;
+      const attName = l.attended_by_name || (attId ? `Staff #${attId}` : null);
+
+      if (!attId && !attName) return;
+
+      const key = attId || `name_${attName.toLowerCase()}`;
+      if (!employeeMap[key]) {
+        employeeMap[key] = {
+          id: attId,
+          name: attName,
+          username: attName,
+          role: 'employee',
+          modules: [],
+          attendedCount: 0,
+          convertedCount: 0,
+          convertedRevenue: 0,
+          attendedLeads: [],
+          convertedLeads: []
+        };
+      }
+
+      const emp = employeeMap[key];
+      emp.attendedCount += 1;
+      emp.attendedLeads.push(l);
+
+      if (l.status === 'converted' || l.status === 'assigned' || l.status === 'completed') {
+        emp.convertedCount += 1;
+        const price = parseFloat(l.itinerary_price) || 0;
+        emp.convertedRevenue += price;
+        emp.convertedLeads.push(l);
+      }
+    });
+
+    return Object.values(employeeMap).map(e => ({
+      ...e,
+      conversionRate: e.attendedCount > 0 ? ((e.convertedCount / e.attendedCount) * 100).toFixed(1) : '0.0'
+    })).sort((a, b) => b.convertedCount - a.convertedCount || b.convertedRevenue - a.convertedRevenue);
+  };
+
+  const exportEmployeeMonthlyReportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Employee Name,Username,Role,Leads Handled,Leads Converted,Conversion Rate (%),Total Converted Revenue (Rs.)\n";
+
+    const reportList = getMonthlyEmployeeReportList();
+    reportList.forEach(e => {
+      csvContent += `"${e.name.replace(/"/g, '""')}","${e.username}","${e.role}",${e.attendedCount},${e.convertedCount},${e.conversionRate}%,${e.convertedRevenue}\n`;
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    link.setAttribute("download", `Employee_Performance_Report_${monthNames[employeeReportMonth]}_${employeeReportYear}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePickupLead = async (leadId) => {
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, action: 'pickup' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`Lead successfully picked up by you!`);
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to pick up lead.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while picking up lead.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReleaseLead = async (leadId) => {
+    if (!confirm('Return this lead to the open pool for any team member to pick up?')) return;
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, action: 'release' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`Lead returned to open pool.`);
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to release lead.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while releasing lead.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleOpenNewUserModal = () => {
+    setEditingUser(null);
+    setUserFormName('');
+    setUserFormUsername('');
+    setUserFormPassword('');
+    setUserFormPhone('');
+    setUserFormRole('employee');
+    setUserFormModules(['crm', 'itinerary']);
+    setUserFormIsActive(true);
+    setError('');
+    setSuccess('');
+    setShowUserModal(true);
+  };
+
+  const handleOpenEditUserModal = (u) => {
+    setEditingUser(u);
+    setUserFormName(u.name || '');
+    setUserFormUsername(u.username || '');
+    setUserFormPassword('');
+    setUserFormPhone(u.phone || '');
+    setUserFormRole(u.role || 'employee');
+    let uMods = u.modules;
+    if (typeof uMods === 'string') {
+      try { uMods = JSON.parse(uMods); } catch (e) { uMods = []; }
+    }
+    setUserFormModules(Array.isArray(uMods) ? uMods : ['crm', 'itinerary']);
+    setUserFormIsActive(u.is_active !== false);
+    setError('');
+    setSuccess('');
+    setShowUserModal(true);
+  };
+
+  const handleUserFormSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+
+    const isEdit = !!editingUser;
+    const url = '/api/admin/users';
+    const method = isEdit ? 'PUT' : 'POST';
+    const payload = {
+      name: userFormName,
+      username: userFormUsername,
+      role: userFormRole,
+      modules: userFormModules,
+      phone: userFormPhone,
+      isActive: userFormIsActive
+    };
+    if (userFormPassword && userFormPassword.trim()) {
+      payload.password = userFormPassword;
+    } else if (!isEdit) {
+      setError('Password is required for new user.');
+      setActionLoading(false);
+      return;
+    }
+    if (isEdit) {
+      payload.id = editingUser.id;
+    }
+
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`User "${userFormName}" ${isEdit ? 'updated' : 'created'} successfully!`);
+        setShowUserModal(false);
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to save user.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while saving user.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteUser = async (u) => {
+    if (!confirm(`Are you sure you want to delete user "${u.name}" (@${u.username})?`)) return;
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users?id=${u.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(`User "${u.name}" deleted successfully.`);
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to delete user.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while deleting user.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const router = useRouter();
 
   const fetchDashboardData = async () => {
     try {
+      // 0. Fetch logged in session user details & permissions
+      const meRes = await fetch('/api/admin/me');
+      if (!meRes.ok) {
+        router.push('/admin');
+        return;
+      }
+      const meData = await meRes.json();
+      const currentUser = meData.user;
+      setAdmin(currentUser);
+
       // 1. Fetch leads
       const leadsRes = await fetch('/api/admin/leads');
       if (!leadsRes.ok) {
@@ -367,7 +822,11 @@ export default function AdminDashboard() {
         throw new Error('Unauthorized');
       }
       const leadsData = await leadsRes.json();
-      setLeads(leadsData.leads || []);
+      const loadedLeads = leadsData.leads || [];
+      setLeads(loadedLeads);
+      if (!knownLeadIdsRef.current) {
+        knownLeadIdsRef.current = new Set(loadedLeads.map(l => l.id));
+      }
 
       // 2. Fetch hotels
       const hotelsRes = await fetch('/api/admin/hotels');
@@ -399,7 +858,14 @@ export default function AdminDashboard() {
       const trackingData = await trackingRes.json();
       setJourneys(trackingData.journeys || []);
 
-      setAdmin({ name: 'Sandesh Travels Admin', username: 'admin' });
+      // 8. Fetch team members / staff if admin
+      if (currentUser && currentUser.role === 'admin') {
+        const usersRes = await fetch('/api/admin/users');
+        if (usersRes.ok) {
+          const usersData = await usersRes.json();
+          setStaffUsers(usersData.users || []);
+        }
+      }
     } catch (err) {
       console.error('Fetch admin dashboard error:', err);
       setError('Could not load portal data. Check database settings.');
@@ -410,6 +876,38 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+
+    // Background live lead listener (every 10 seconds)
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/admin/leads');
+        if (!res.ok) return;
+        const data = await res.json();
+        const incomingLeads = data.leads || [];
+
+        if (knownLeadIdsRef.current) {
+          const newLeadsFound = incomingLeads.filter(l => !knownLeadIdsRef.current.has(l.id));
+          if (newLeadsFound.length > 0) {
+            newLeadsFound.forEach(nl => {
+              knownLeadIdsRef.current.add(nl.id);
+              triggerLeadAlert(nl);
+            });
+            setLeads(incomingLeads);
+
+            // Silently update fleet schedule
+            fetch('/api/admin/fleet').then(r => r.json()).then(fd => {
+              if (fd.fleet) setFleet(fd.fleet);
+            }).catch(() => {});
+          }
+        } else {
+          knownLeadIdsRef.current = new Set(incomingLeads.map(l => l.id));
+        }
+      } catch (pollErr) {
+        // silent polling catch
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
   }, []);
 
   const getJourneyTimelineStatus = (lead, itinerary) => {
@@ -1280,11 +1778,16 @@ export default function AdminDashboard() {
     const matchesSearch = lead.client_name.toLowerCase().includes(query) || 
                           lead.client_phone.includes(query) ||
                           (lead.partner_name && lead.partner_name.toLowerCase().includes(query)) ||
+                          (lead.attended_by_name && lead.attended_by_name.toLowerCase().includes(query)) ||
                           (srcInfo.pkg && srcInfo.pkg.toLowerCase().includes(query)) ||
                           (srcInfo.label && srcInfo.label.toLowerCase().includes(query));
     const matchesStatus = leadsFilterStatus === 'all' || lead.status === leadsFilterStatus;
     const matchesSource = leadsFilterSource === 'all' || srcInfo.type === leadsFilterSource;
-    return matchesSearch && matchesStatus && matchesSource;
+    const matchesAttendee = leadsFilterAttendee === 'all' ||
+      (leadsFilterAttendee === 'unattended' && !lead.attended_by && !lead.attended_by_name) ||
+      (leadsFilterAttendee === 'mine' && (lead.attended_by === admin?.id || (lead.attended_by_name && lead.attended_by_name.toLowerCase() === (admin?.name || '').toLowerCase()))) ||
+      (String(lead.attended_by) === String(leadsFilterAttendee));
+    return matchesSearch && matchesStatus && matchesSource && matchesAttendee;
   });
 
   // Calculate high level metrics
@@ -1328,119 +1831,148 @@ export default function AdminDashboard() {
             </div>
           </div>
           <nav className="nav-menu">
-            <button 
-              onClick={() => setActiveTab('leads')} 
-              className={`nav-link ${activeTab === 'leads' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-address-book"></i> Leads CRM
-            </button>
-            <button 
-              onClick={() => setActiveTab('fleet')} 
-              className={`nav-link ${activeTab === 'fleet' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-car-side"></i> Fleet Schedule
-            </button>
-            <button 
-              onClick={() => setActiveTab('dispatch')} 
-              className={`nav-link ${activeTab === 'dispatch' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-key"></i> Fleet Assignment
-            </button>
-            {/* Journey Tracking — expandable parent */}
-            <button
-              onClick={() => { setActiveTab('tracking'); setTrackingSubTab('live'); }}
-              className={`nav-link ${activeTab === 'tracking' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-route"></i> Journey Tracking
-            </button>
-            {activeTab === 'tracking' && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '1rem', marginTop: '-4px', marginBottom: '4px' }}>
-                <button
-                  onClick={() => setTrackingSubTab('live')}
-                  style={{
-                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
-                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
-                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'live' ? '700' : '500',
-                    color: trackingSubTab === 'live' ? 'var(--primary)' : 'var(--text-secondary)',
-                    background: trackingSubTab === 'live' ? 'rgba(16,185,129,0.08)' : 'transparent',
-                    borderLeft: trackingSubTab === 'live' ? '2px solid var(--primary)' : '2px solid transparent',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <i className="fa-solid fa-circle-dot" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--primary)' }}></i>
-                  Live Journey
-                </button>
-                <button
-                  onClick={() => setTrackingSubTab('upcoming')}
-                  style={{
-                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
-                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
-                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'upcoming' ? '700' : '500',
-                    color: trackingSubTab === 'upcoming' ? 'var(--accent-teal)' : 'var(--text-secondary)',
-                    background: trackingSubTab === 'upcoming' ? 'rgba(20,184,166,0.08)' : 'transparent',
-                    borderLeft: trackingSubTab === 'upcoming' ? '2px solid var(--accent-teal)' : '2px solid transparent',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <i className="fa-solid fa-calendar-days" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--accent-teal)' }}></i>
-                  Upcoming Journey
-                </button>
-                <button
-                  onClick={() => setTrackingSubTab('completed')}
-                  style={{
-                    border: 'none', background: 'none', width: '100%', textAlign: 'left',
-                    padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
-                    fontSize: '0.82rem', fontWeight: trackingSubTab === 'completed' ? '700' : '500',
-                    color: trackingSubTab === 'completed' ? 'var(--text-primary)' : 'var(--text-secondary)',
-                    background: trackingSubTab === 'completed' ? 'rgba(255,255,255,0.05)' : 'transparent',
-                    borderLeft: trackingSubTab === 'completed' ? '2px solid var(--text-muted)' : '2px solid transparent',
-                    transition: 'all 0.15s'
-                  }}
-                >
-                  <i className="fa-solid fa-circle-check" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--text-muted)' }}></i>
-                  Completed Journey
-                </button>
-              </div>
+            {canAccess('crm') && (
+              <button 
+                onClick={() => setActiveTab('leads')} 
+                className={`nav-link ${activeTab === 'leads' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-address-book"></i> Leads CRM
+              </button>
             )}
-            <button 
-              onClick={() => setActiveTab('hotels')} 
-              className={`nav-link ${activeTab === 'hotels' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-hotel"></i> Hotels Registry
-            </button>
-            <button 
-              onClick={() => setActiveTab('partners')} 
-              className={`nav-link ${activeTab === 'partners' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-handshake"></i> Partners Master
-            </button>
-            <button 
-              onClick={() => setActiveTab('drivers')} 
-              className={`nav-link ${activeTab === 'drivers' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-id-card"></i> Drivers Registry
-            </button>
-            <button 
-              onClick={() => setActiveTab('templates')} 
-              className={`nav-link ${activeTab === 'templates' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-compass"></i> Itinerary Master
-            </button>
-            <button 
-              onClick={() => setActiveTab('reports')} 
-              className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
-              style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
-            >
-              <i className="fa-solid fa-chart-pie"></i> Reports & Analytics
-            </button>
+            {canAccess('fleet') && (
+              <button 
+                onClick={() => setActiveTab('fleet')} 
+                className={`nav-link ${activeTab === 'fleet' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-car-side"></i> Fleet Schedule
+              </button>
+            )}
+            {canAccess('dispatch') && (
+              <button 
+                onClick={() => setActiveTab('dispatch')} 
+                className={`nav-link ${activeTab === 'dispatch' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-key"></i> Fleet Assignment
+              </button>
+            )}
+            {/* Journey Tracking — expandable parent */}
+            {canAccess('tracking') && (
+              <>
+                <button
+                  onClick={() => { setActiveTab('tracking'); setTrackingSubTab('live'); }}
+                  className={`nav-link ${activeTab === 'tracking' ? 'active' : ''}`}
+                  style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+                >
+                  <i className="fa-solid fa-route"></i> Journey Tracking
+                </button>
+                {activeTab === 'tracking' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', paddingLeft: '1rem', marginTop: '-4px', marginBottom: '4px' }}>
+                    <button
+                      onClick={() => setTrackingSubTab('live')}
+                      style={{
+                        border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                        padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        fontSize: '0.82rem', fontWeight: trackingSubTab === 'live' ? '700' : '500',
+                        color: trackingSubTab === 'live' ? 'var(--primary)' : 'var(--text-secondary)',
+                        background: trackingSubTab === 'live' ? 'rgba(16,185,129,0.08)' : 'transparent',
+                        borderLeft: trackingSubTab === 'live' ? '2px solid var(--primary)' : '2px solid transparent',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-dot" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--primary)' }}></i>
+                      Live Journey
+                    </button>
+                    <button
+                      onClick={() => setTrackingSubTab('upcoming')}
+                      style={{
+                        border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                        padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        fontSize: '0.82rem', fontWeight: trackingSubTab === 'upcoming' ? '700' : '500',
+                        color: trackingSubTab === 'upcoming' ? 'var(--accent-teal)' : 'var(--text-secondary)',
+                        background: trackingSubTab === 'upcoming' ? 'rgba(20,184,166,0.08)' : 'transparent',
+                        borderLeft: trackingSubTab === 'upcoming' ? '2px solid var(--accent-teal)' : '2px solid transparent',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <i className="fa-solid fa-calendar-days" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--accent-teal)' }}></i>
+                      Upcoming Journey
+                    </button>
+                    <button
+                      onClick={() => setTrackingSubTab('completed')}
+                      style={{
+                        border: 'none', background: 'none', width: '100%', textAlign: 'left',
+                        padding: '0.4rem 0.75rem', borderRadius: '6px', cursor: 'pointer',
+                        fontSize: '0.82rem', fontWeight: trackingSubTab === 'completed' ? '700' : '500',
+                        color: trackingSubTab === 'completed' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        background: trackingSubTab === 'completed' ? 'rgba(255,255,255,0.05)' : 'transparent',
+                        borderLeft: trackingSubTab === 'completed' ? '2px solid var(--text-muted)' : '2px solid transparent',
+                        transition: 'all 0.15s'
+                      }}
+                    >
+                      <i className="fa-solid fa-circle-check" style={{ fontSize: '0.6rem', marginRight: '0.4rem', color: 'var(--text-muted)' }}></i>
+                      Completed Journey
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {canAccess('hotels') && (
+              <button 
+                onClick={() => setActiveTab('hotels')} 
+                className={`nav-link ${activeTab === 'hotels' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-hotel"></i> Hotels Registry
+              </button>
+            )}
+            {canAccess('partners') && (
+              <button 
+                onClick={() => setActiveTab('partners')} 
+                className={`nav-link ${activeTab === 'partners' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-handshake"></i> Partners Master
+              </button>
+            )}
+            {canAccess('drivers') && (
+              <button 
+                onClick={() => setActiveTab('drivers')} 
+                className={`nav-link ${activeTab === 'drivers' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-id-card"></i> Drivers Registry
+              </button>
+            )}
+            {canAccess('templates') && (
+              <button 
+                onClick={() => setActiveTab('templates')} 
+                className={`nav-link ${activeTab === 'templates' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-compass"></i> Itinerary Master
+              </button>
+            )}
+            {canAccess('reports') && (
+              <button 
+                onClick={() => setActiveTab('reports')} 
+                className={`nav-link ${activeTab === 'reports' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-chart-pie"></i> Reports & Analytics
+              </button>
+            )}
+            {admin?.role === 'admin' && (
+              <button 
+                onClick={() => setActiveTab('users')} 
+                className={`nav-link ${activeTab === 'users' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-users-gear" style={{ color: 'var(--secondary)' }}></i> Team & Roles
+              </button>
+            )}
           </nav>
         </div>
         <div>
@@ -1451,9 +1983,11 @@ export default function AdminDashboard() {
             marginBottom: '1.5rem',
             fontSize: '0.85rem'
           }}>
-            <p style={{ color: 'var(--text-muted)' }}>Logged in Owner:</p>
+            <p style={{ color: 'var(--text-muted)' }}>Logged in User:</p>
             <p style={{ fontWeight: '600', color: '#FFF', marginTop: '0.2rem' }}>{admin?.name}</p>
-            <p style={{ color: 'var(--secondary)', marginTop: '0.2rem' }}>Root Administrator</p>
+            <p style={{ color: admin?.role === 'admin' ? 'var(--secondary)' : 'var(--accent-teal)', marginTop: '0.2rem', fontWeight: 600 }}>
+              {admin?.role === 'admin' ? 'Root Administrator' : 'Staff Executive'}
+            </p>
           </div>
           <button 
             onClick={handleLogout} 
@@ -1468,31 +2002,104 @@ export default function AdminDashboard() {
 
       {/* Main content */}
       <main className="main-content">
-        <header className="page-header">
+        <header className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '1.25rem', flexWrap: 'wrap' }}>
           <div>
-            <h1>Travel Owner Command Portal</h1>
-            <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <h1 style={{ margin: 0 }}>Travel Owner Command Portal</h1>
+              <span style={{ 
+                display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+                fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.65rem',
+                borderRadius: '9999px', background: 'rgba(16,185,129,0.12)', color: '#34D399',
+                border: '1px solid rgba(16,185,129,0.3)' 
+              }}>
+                <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#34D399', display: 'inline-block', boxShadow: '0 0 8px #34D399' }}></span>
+                Live Lead Radar Active
+              </span>
+            </div>
+            <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.88rem' }}>
               Manage incoming inquiries, track driver logs, build customized itineraries, and check fleet availability.
             </p>
           </div>
-          {activeTab === 'leads' && (
-            <button 
-              className="btn btn-primary"
-              onClick={() => setShowBookModal(true)}
-              style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
-            >
-              <i className="fa-solid fa-circle-plus"></i> Book Walk-in / Phone Enquiry
-            </button>
-          )}
-          {activeTab === 'templates' && (
-            <button 
-              className="btn btn-primary"
-              onClick={handleOpenNewTemplateModal}
-              style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
-            >
-              <i className="fa-solid fa-circle-plus"></i> Create Readymade Package
-            </button>
-          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+            {/* Audio & Voice Control Pill */}
+            <div style={{ 
+              display: 'inline-flex', alignItems: 'center', gap: '0.25rem', 
+              background: 'var(--bg-surface)', border: '1px solid var(--border)', 
+              borderRadius: '8px', padding: '0.25rem 0.4rem' 
+            }}>
+              <button
+                type="button"
+                onClick={toggleSound}
+                className="btn btn-secondary"
+                style={{ 
+                  padding: '0.3rem 0.55rem', fontSize: '0.75rem', border: 'none',
+                  background: soundEnabled ? 'rgba(56,189,248,0.15)' : 'transparent',
+                  color: soundEnabled ? '#38bdf8' : 'var(--text-muted)' 
+                }}
+                title={soundEnabled ? "Mute sound chime" : "Enable sound chime"}
+              >
+                <i className={`fa-solid ${soundEnabled ? 'fa-volume-high' : 'fa-volume-xmark'}`} style={{ marginRight: '0.25rem' }}></i>
+                {soundEnabled ? 'Sound' : 'Muted'}
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleVoice}
+                className="btn btn-secondary"
+                style={{ 
+                  padding: '0.3rem 0.55rem', fontSize: '0.75rem', border: 'none',
+                  background: voiceEnabled ? 'rgba(168,85,247,0.15)' : 'transparent',
+                  color: voiceEnabled ? '#c084fc' : 'var(--text-muted)' 
+                }}
+                title={voiceEnabled ? "Turn off voice announcements" : "Turn on voice announcements"}
+              >
+                <i className={`fa-solid ${voiceEnabled ? 'fa-bullhorn' : 'fa-microphone-slash'}`} style={{ marginRight: '0.25rem' }}></i>
+                {voiceEnabled ? 'Voice' : 'Voice OFF'}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleTestAlert}
+                className="btn btn-secondary"
+                style={{ padding: '0.3rem 0.5rem', fontSize: '0.75rem', border: 'none', color: '#FBBF24' }}
+                title="Test sound chime and voice alert"
+              >
+                <i className="fa-solid fa-play" style={{ marginRight: '0.2rem' }}></i> Test
+              </button>
+            </div>
+
+            {desktopNotifPermission !== 'granted' && (
+              <button
+                type="button"
+                onClick={requestDesktopPermission}
+                className="btn btn-secondary"
+                style={{ padding: '0.4rem 0.7rem', fontSize: '0.78rem', color: '#38bdf8', borderColor: 'rgba(56,189,248,0.3)', background: 'rgba(56,189,248,0.08)' }}
+                title="Enable desktop notifications when browser is in background"
+              >
+                <i className="fa-solid fa-bell" style={{ marginRight: '0.3rem' }}></i> Desktop Alerts
+              </button>
+            )}
+
+            {activeTab === 'leads' && (
+              <button 
+                className="btn btn-primary"
+                onClick={() => setShowBookModal(true)}
+                style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
+              >
+                <i className="fa-solid fa-circle-plus"></i> Book Walk-in / Phone Enquiry
+              </button>
+            )}
+            {activeTab === 'templates' && (
+              <button 
+                className="btn btn-primary"
+                onClick={handleOpenNewTemplateModal}
+                style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))', padding: '0.45rem 0.9rem', fontSize: '0.85rem' }}
+              >
+                <i className="fa-solid fa-circle-plus"></i> Create Readymade Package
+              </button>
+            )}
+          </div>
         </header>
 
 
@@ -1604,6 +2211,24 @@ export default function AdminDashboard() {
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
+
+                <select
+                  className="form-control"
+                  style={{ width: '175px', padding: '0.5rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                  value={leadsFilterAttendee}
+                  onChange={(e) => setLeadsFilterAttendee(e.target.value)}
+                >
+                  <option value="all">All Attendees</option>
+                  <option value="unattended">✨ Available (Open Pool)</option>
+                  <option value="mine">👤 My Picked Up Leads</option>
+                  {staffUsers.length > 0 && (
+                    <optgroup label="By Staff Member">
+                      {staffUsers.map(u => (
+                        <option key={u.id} value={String(u.id)}>{u.name} (@{u.username})</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
               </div>
             </div>
 
@@ -1620,6 +2245,7 @@ export default function AdminDashboard() {
                       <th>Lead Details</th>
                       <th>Traveler Route & Date</th>
                       <th>Lead Source</th>
+                      <th>Attendee / Staff</th>
                       <th>Status Tracking</th>
                       <th>Actions</th>
                     </tr>
@@ -1676,6 +2302,69 @@ export default function AdminDashboard() {
                               </span>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
                                 Walk-in / Phone
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                        <td>
+                          {lead.attended_by_name ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                              <span style={{ 
+                                display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                                fontSize: '0.78rem', fontWeight: 600, padding: '0.2rem 0.55rem', borderRadius: '6px',
+                                background: lead.attended_by === admin?.id ? 'rgba(16,185,129,0.12)' : 'rgba(99,102,241,0.12)',
+                                color: lead.attended_by === admin?.id ? '#34D399' : '#818CF8',
+                                border: lead.attended_by === admin?.id ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(99,102,241,0.3)'
+                              }}>
+                                <i className="fa-solid fa-user-check"></i>
+                                {lead.attended_by === admin?.id ? 'You' : lead.attended_by_name}
+                              </span>
+                              {lead.attended_at && (
+                                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                  {new Date(lead.attended_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                              )}
+                              {admin?.role === 'admin' && lead.status !== 'completed' && lead.status !== 'cancelled' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleReleaseLead(lead.id)}
+                                  style={{ border: 'none', background: 'none', color: '#EF4444', fontSize: '0.72rem', cursor: 'pointer', padding: 0, marginTop: '2px', textDecoration: 'underline' }}
+                                  title="Release back to open pool"
+                                >
+                                  Release Lead
+                                </button>
+                              )}
+                            </div>
+                          ) : (lead.status === 'completed' || lead.status === 'cancelled') ? (
+                            <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <i className="fa-solid fa-lock" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}></i>
+                              <span>{lead.status === 'completed' ? 'Completed Tour' : 'Cancelled'}</span>
+                            </div>
+                          ) : (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => handlePickupLead(lead.id)}
+                                className="btn btn-primary"
+                                style={{ 
+                                  background: 'linear-gradient(135deg, #10B981, #14B8A6)', 
+                                  padding: '0.35rem 0.7rem', 
+                                  fontSize: '0.78rem', 
+                                  fontWeight: '700',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  boxShadow: '0 2px 8px rgba(16,185,129,0.25)',
+                                  border: 'none',
+                                  whiteSpace: 'nowrap'
+                                }}
+                                title="Click to take ownership of this lead"
+                              >
+                                <i className="fa-solid fa-hand-holding-hand"></i> Pick Up Lead
+                              </button>
+                              <div style={{ fontSize: '0.7rem', color: '#FBBF24', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#FBBF24', display: 'inline-block' }}></span>
+                                Open for pickup
                               </div>
                             </div>
                           )}
@@ -3320,6 +4009,7 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', flexWrap: 'wrap' }}>
               {[
                 { id: 'revenue', label: '💰 Revenue & Bookings Log', icon: 'fa-file-invoice-dollar' },
+                { id: 'employees', label: '👥 Employee Monthly Performance', icon: 'fa-user-tie' },
                 { id: 'drivers_monthly', label: '👤 Driver Monthly Report', icon: 'fa-id-card-clip' },
                 { id: 'fleet', label: '🚗 Fleet & Driver Report', icon: 'fa-car-side' },
                 { id: 'partners', label: '🤝 B2B Partner Commissions', icon: 'fa-handshake' },
@@ -3342,6 +4032,176 @@ export default function AdminDashboard() {
                 </button>
               ))}
             </div>
+
+            {/* Sub-tab: Employee Performance Report */}
+            {reportSubTab === 'employees' && (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
+                  <div>
+                    <h3 style={{ fontSize: '1.15rem', color: '#FFF', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <i className="fa-solid fa-trophy" style={{ color: '#FBBF24' }}></i>
+                      Employee Lead Performance & Conversion Report
+                    </h3>
+                    <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
+                      Monthly report tracking leads attended, conversions closed, and revenue generated by each employee.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Month:</span>
+                      <select
+                        className="form-control"
+                        value={employeeReportMonth}
+                        onChange={(e) => setEmployeeReportMonth(parseInt(e.target.value, 10))}
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                      >
+                        {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((mName, mIdx) => (
+                          <option key={mIdx} value={mIdx}>{mName}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Year:</span>
+                      <select
+                        className="form-control"
+                        value={employeeReportYear}
+                        onChange={(e) => setEmployeeReportYear(parseInt(e.target.value, 10))}
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                      >
+                        {[2024, 2025, 2026, 2027].map((yr) => (
+                          <option key={yr} value={yr}>{yr}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button 
+                      className="btn btn-secondary" 
+                      onClick={exportEmployeeMonthlyReportToCSV}
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem', borderColor: 'rgba(56,189,248,0.4)', background: 'rgba(56,189,248,0.08)', color: '#38bdf8' }}
+                    >
+                      <i className="fa-solid fa-file-csv" style={{ marginRight: '0.35rem' }}></i> Export Staff CSV
+                    </button>
+                  </div>
+                </div>
+
+                {/* KPI Cards for the selected month */}
+                {(() => {
+                  const empList = getMonthlyEmployeeReportList();
+                  const totalHandled = empList.reduce((acc, e) => acc + e.attendedCount, 0);
+                  const totalConverted = empList.reduce((acc, e) => acc + e.convertedCount, 0);
+                  const teamRate = totalHandled > 0 ? ((totalConverted / totalHandled) * 100).toFixed(1) : '0.0';
+                  const totalRev = empList.reduce((acc, e) => acc + e.convertedRevenue, 0);
+
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+                      <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', padding: '1rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Leads Handled</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FFF', margin: '0.25rem 0' }}>{totalHandled}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--accent-teal)' }}>Active in selected month</div>
+                      </div>
+
+                      <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid rgba(16,185,129,0.3)', padding: '1rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#34D399', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Leads Converted</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#34D399', margin: '0.25rem 0' }}>{totalConverted}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Confirmed bookings</div>
+                      </div>
+
+                      <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid rgba(245,158,11,0.3)', padding: '1rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#FBBF24', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Team Conversion Rate</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FBBF24', margin: '0.25rem 0' }}>{teamRate}%</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Average closing success</div>
+                      </div>
+
+                      <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid rgba(168,85,247,0.3)', padding: '1rem' }}>
+                        <div style={{ fontSize: '0.75rem', color: '#C084FC', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Converted Revenue</div>
+                        <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#C084FC', margin: '0.25rem 0' }}>Rs. {totalRev.toLocaleString()}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Generated by employees</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Employee Performance Table */}
+                <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                  <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                        <th>Employee / Staff Name</th>
+                        <th>Role</th>
+                        <th>Leads Attended / Picked Up</th>
+                        <th>Leads Converted</th>
+                        <th>Conversion Rate (%)</th>
+                        <th>Converted Revenue (Rs.)</th>
+                        <th style={{ textAlign: 'center' }}>Breakdown</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {getMonthlyEmployeeReportList().length === 0 ? (
+                        <tr>
+                          <td colSpan="7" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                            No employee performance data recorded for this month.
+                          </td>
+                        </tr>
+                      ) : (
+                        getMonthlyEmployeeReportList().map(emp => (
+                          <tr key={emp.id || emp.name} style={{ borderBottom: '1px solid var(--border)' }}>
+                            <td>
+                              <div style={{ fontWeight: 700, color: '#FFF' }}>{emp.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>@{emp.username}</div>
+                            </td>
+                            <td>
+                              <span className="badge" style={{ 
+                                background: emp.role === 'admin' ? 'rgba(99,102,241,0.15)' : 'rgba(20,184,166,0.15)',
+                                color: emp.role === 'admin' ? '#818CF8' : '#2DD4BF',
+                                border: emp.role === 'admin' ? '1px solid rgba(99,102,241,0.3)' : '1px solid rgba(20,184,166,0.3)',
+                                fontSize: '0.72rem'
+                              }}>
+                                {emp.role === 'admin' ? 'Administrator' : 'Staff Executive'}
+                              </span>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#FFF', fontSize: '0.95rem' }}>{emp.attendedCount}</strong>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>inquiries</span>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#34D399', fontSize: '0.95rem' }}>{emp.convertedCount}</strong>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.3rem' }}>closed</span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{ flex: 1, height: '6px', background: 'rgba(255,255,255,0.08)', borderRadius: '3px', overflow: 'hidden', maxWidth: '80px' }}>
+                                  <div style={{ width: `${Math.min(100, parseFloat(emp.conversionRate))}%`, height: '100%', background: 'linear-gradient(90deg, #10B981, #14B8A6)' }}></div>
+                                </div>
+                                <span style={{ fontWeight: 700, color: parseFloat(emp.conversionRate) > 0 ? '#34D399' : 'var(--text-muted)' }}>
+                                  {emp.conversionRate}%
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <strong style={{ color: '#C084FC', fontSize: '0.95rem' }}>
+                                Rs. {emp.convertedRevenue.toLocaleString()}
+                              </strong>
+                            </td>
+                            <td style={{ textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => setSelectedEmployeeDetails(emp)}
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                title="View converted leads breakdown"
+                              >
+                                <i className="fa-solid fa-list-check" style={{ color: 'var(--accent-teal)' }}></i> View Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Sub-tab: Driver-Wise Monthly Report */}
             {reportSubTab === 'drivers_monthly' && (
@@ -3744,6 +4604,179 @@ export default function AdminDashboard() {
                 </div>
               </div>
             )}
+          </section>
+        )}
+
+        {/* Team & Role-Based Permissions Management Tab (Admin Only) */}
+        {activeTab === 'users' && admin?.role === 'admin' && (
+          <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.4rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <i className="fa-solid fa-users-gear" style={{ color: 'var(--secondary)' }}></i>
+                  Team Members & Module Access Control
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginTop: '0.2rem' }}>
+                  Create employee accounts, control which portal modules each staff member can access, and manage login permissions.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleOpenNewUserModal}
+                style={{ background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))', padding: '0.45rem 1rem', fontSize: '0.85rem' }}
+              >
+                <i className="fa-solid fa-user-plus"></i> Add New Employee / User
+              </button>
+            </div>
+
+            {/* Quick Stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+              <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Total Accounts</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FFF', margin: '0.25rem 0' }}>{staffUsers.length}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Registered system users</div>
+              </div>
+
+              <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid rgba(16,185,129,0.3)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#34D399', textTransform: 'uppercase' }}>Active Employees</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#34D399', margin: '0.25rem 0' }}>
+                  {staffUsers.filter(u => u.role === 'employee' && u.is_active !== false).length}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Staff executives active</div>
+              </div>
+
+              <div className="glass-card" style={{ background: 'var(--bg-surface-elevated)', border: '1px solid rgba(99,102,241,0.3)', padding: '1rem' }}>
+                <div style={{ fontSize: '0.75rem', color: '#818CF8', textTransform: 'uppercase' }}>Administrators</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#818CF8', margin: '0.25rem 0' }}>
+                  {staffUsers.filter(u => u.role === 'admin').length}
+                </div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Full system access</div>
+              </div>
+            </div>
+
+            {/* Users Table */}
+            <div className="table-responsive" style={{ overflowX: 'auto' }}>
+              <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+                <thead>
+                  <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                    <th>Employee Name</th>
+                    <th>Login Username</th>
+                    <th>Role</th>
+                    <th>Assigned Modules & Permissions</th>
+                    <th>Status</th>
+                    <th style={{ textAlign: 'center' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {staffUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                        No staff accounts found. Click "Add New Employee" to create one.
+                      </td>
+                    </tr>
+                  ) : (
+                    staffUsers.map(u => {
+                      let uMods = u.modules;
+                      if (typeof uMods === 'string') {
+                        try { uMods = JSON.parse(uMods); } catch (e) { uMods = []; }
+                      }
+                      if (!Array.isArray(uMods)) uMods = [];
+
+                      return (
+                        <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                          <td>
+                            <div style={{ fontWeight: 700, color: '#FFF' }}>{u.name}</div>
+                            {u.phone && <div style={{ fontSize: '0.75rem', color: 'var(--accent-teal)' }}>📞 {u.phone}</div>}
+                          </td>
+                          <td>
+                            <code style={{ background: 'rgba(255,255,255,0.06)', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#38bdf8' }}>
+                              @{u.username}
+                            </code>
+                          </td>
+                          <td>
+                            <span className="badge" style={{ 
+                              background: u.role === 'admin' ? 'rgba(99,102,241,0.15)' : 'rgba(20,184,166,0.15)',
+                              color: u.role === 'admin' ? '#818CF8' : '#2DD4BF',
+                              border: u.role === 'admin' ? '1px solid rgba(99,102,241,0.3)' : '1px solid rgba(20,184,166,0.3)',
+                              fontSize: '0.75rem'
+                            }}>
+                              {u.role === 'admin' ? 'Root Administrator' : 'Staff / Employee'}
+                            </span>
+                          </td>
+                          <td>
+                            {u.role === 'admin' ? (
+                              <span style={{ fontSize: '0.78rem', color: '#34D399', fontWeight: 600 }}>
+                                <i className="fa-solid fa-circle-check" style={{ marginRight: '0.3rem' }}></i> All Modules Permitted (Full Access)
+                              </span>
+                            ) : (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxWidth: '380px' }}>
+                                {uMods.length === 0 ? (
+                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No modules assigned</span>
+                                ) : (
+                                  uMods.map(mKey => {
+                                    const modInfo = SYSTEM_MODULES.find(sm => sm.key === mKey);
+                                    return (
+                                      <span key={mKey} style={{ 
+                                        fontSize: '0.7rem', 
+                                        padding: '0.15rem 0.45rem', 
+                                        borderRadius: '4px', 
+                                        background: 'rgba(255,255,255,0.05)', 
+                                        border: '1px solid var(--border)',
+                                        color: 'var(--text-primary)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.25rem'
+                                      }}>
+                                        <i className={`fa-solid ${modInfo?.icon || 'fa-folder'}`} style={{ fontSize: '0.65rem', color: 'var(--accent-teal)' }}></i>
+                                        {modInfo?.label || mKey}
+                                      </span>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            {u.is_active !== false ? (
+                              <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>Active</span>
+                            ) : (
+                              <span className="badge badge-cancelled" style={{ fontSize: '0.75rem' }}>Deactivated</span>
+                            )}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                              <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => handleOpenEditUserModal(u)}
+                                style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem' }}
+                                title="Edit user details & module permissions"
+                              >
+                                <i className="fa-solid fa-user-pen" style={{ color: 'var(--accent-teal)' }}></i> Edit
+                              </button>
+
+                              {u.id !== admin?.id && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary"
+                                  onClick={() => handleDeleteUser(u)}
+                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem', color: '#EF4444' }}
+                                  title="Delete user"
+                                >
+                                  <i className="fa-solid fa-trash-can"></i>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           </section>
         )}
       </main>
@@ -4482,6 +5515,362 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+      {/* Add / Edit Staff User Modal */}
+      {showUserModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(5, 7, 12, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1.5rem'
+        }}>
+          <div 
+            className="animate-fade-in"
+            style={{
+              background: 'var(--bg-surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--border-radius-lg)',
+              width: '100%',
+              maxWidth: '620px',
+              maxHeight: '88vh',
+              overflowY: 'auto',
+              padding: '2rem',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)',
+              position: 'relative'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <i className="fa-solid fa-users-gear" style={{ color: 'var(--secondary)' }}></i>
+                {editingUser ? `Edit Staff: ${editingUser.name}` : 'Add New Employee / Staff'}
+              </h3>
+              <button 
+                onClick={() => setShowUserModal(false)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleUserFormSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Full Name *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Rahul Sharma"
+                    value={userFormName}
+                    onChange={(e) => setUserFormName(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Login Username *</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. rahul_sales"
+                    value={userFormUsername}
+                    onChange={(e) => setUserFormUsername(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Password {editingUser ? '(leave blank to keep unchanged)' : '*'}</label>
+                  <input
+                    type="password"
+                    className="form-control"
+                    placeholder="••••••••"
+                    value={userFormPassword}
+                    onChange={(e) => setUserFormPassword(e.target.value)}
+                    required={!editingUser}
+                  />
+                </div>
+
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>Phone Number</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. +91 9876543210"
+                    value={userFormPhone}
+                    onChange={(e) => setUserFormPhone(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label>User Role *</label>
+                  <select
+                    className="form-control"
+                    value={userFormRole}
+                    onChange={(e) => setUserFormRole(e.target.value)}
+                    style={{ background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                  >
+                    <option value="employee">Staff / Lead Executive</option>
+                    <option value="admin">Root Administrator (Full Access)</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ margin: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <label>Account Status</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginTop: '0.4rem', fontSize: '0.9rem', color: '#FFF' }}>
+                    <input
+                      type="checkbox"
+                      checked={userFormIsActive}
+                      onChange={(e) => setUserFormIsActive(e.target.checked)}
+                      style={{ width: '16px', height: '16px', accentColor: 'var(--primary)' }}
+                    />
+                    <span>Account Active (Allowed to log in)</span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Module Permissions Checkbox Grid (if Employee role) */}
+              {userFormRole === 'employee' ? (
+                <div style={{ background: 'var(--bg-surface-elevated)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                    <div>
+                      <strong style={{ color: '#FFF', fontSize: '0.9rem' }}>Assign Module Permissions</strong>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                        Select the portal modules this employee is authorized to access:
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => setUserFormModules(SYSTEM_MODULES.map(m => m.key))}
+                        style={{ border: 'none', background: 'none', color: 'var(--accent-teal)', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Select All
+                      </button>
+                      <span style={{ color: 'var(--border)' }}>|</span>
+                      <button
+                        type="button"
+                        onClick={() => setUserFormModules([])}
+                        style={{ border: 'none', background: 'none', color: 'var(--text-muted)', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Clear All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.6rem' }}>
+                    {SYSTEM_MODULES.map(mod => {
+                      const isChecked = userFormModules.includes(mod.key);
+                      return (
+                        <label
+                          key={mod.key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 0.65rem',
+                            borderRadius: '6px',
+                            background: isChecked ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.03)',
+                            border: isChecked ? '1px solid rgba(16,185,129,0.3)' : '1px solid var(--border)',
+                            cursor: 'pointer',
+                            transition: 'all 0.15s'
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setUserFormModules(prev => [...prev, mod.key]);
+                              } else {
+                                setUserFormModules(prev => prev.filter(k => k !== mod.key));
+                              }
+                            }}
+                            style={{ accentColor: 'var(--primary)' }}
+                          />
+                          <div style={{ fontSize: '0.8rem', color: isChecked ? '#FFF' : 'var(--text-secondary)' }}>
+                            <i className={`fa-solid ${mod.icon}`} style={{ marginRight: '0.35rem', color: isChecked ? 'var(--primary)' : 'var(--text-muted)' }}></i>
+                            {mod.label}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', padding: '0.85rem', color: '#818CF8', fontSize: '0.82rem' }}>
+                  <i className="fa-solid fa-circle-info" style={{ marginRight: '0.4rem' }}></i>
+                  Administrator role automatically grants full access to all system modules, team management, and financial analytics.
+                </div>
+              )}
+
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.75rem' }}>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary" 
+                  style={{ flex: 1 }}
+                  onClick={() => setShowUserModal(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="btn btn-primary" 
+                  style={{ flex: 1, background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
+                  disabled={actionLoading}
+                >
+                  {actionLoading ? 'Saving User...' : editingUser ? 'Update Employee' : 'Create Employee Account'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Employee Converted Leads Drilldown Modal */}
+      {selectedEmployeeDetails && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(5, 7, 12, 0.8)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '1.5rem'
+        }}>
+          <div className="animate-fade-in glass-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '85vh', overflowY: 'auto', padding: '1.75rem', position: 'relative' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <i className="fa-solid fa-user-check" style={{ color: 'var(--accent-teal)' }}></i>
+                  Performance Breakdown: {selectedEmployeeDetails.name}
+                </h3>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                  @{selectedEmployeeDetails.username} • Role: {selectedEmployeeDetails.role === 'admin' ? 'Administrator' : 'Staff Executive'}
+                </p>
+              </div>
+              <button 
+                onClick={() => setSelectedEmployeeDetails(null)} 
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.4rem', cursor: 'pointer' }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '1.25rem', background: 'var(--bg-surface-elevated)', padding: '0.75rem 1rem', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem' }}>
+              <div>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Report Month: </span>
+                <strong style={{ color: '#FFF', fontSize: '0.9rem' }}>
+                  {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][employeeReportMonth]} {employeeReportYear}
+                </strong>
+              </div>
+              <div style={{ display: 'flex', gap: '1.25rem' }}>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Leads Handled: </span>
+                  <strong style={{ color: '#FFF', fontSize: '0.95rem' }}>{selectedEmployeeDetails.attendedCount}</strong>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Converted: </span>
+                  <strong style={{ color: '#34D399', fontSize: '0.95rem' }}>{selectedEmployeeDetails.convertedCount}</strong>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Revenue: </span>
+                  <strong style={{ color: '#C084FC', fontSize: '0.95rem' }}>Rs. {selectedEmployeeDetails.convertedRevenue.toLocaleString()}</strong>
+                </div>
+              </div>
+            </div>
+
+            <h4 style={{ fontSize: '0.95rem', color: '#FFF', marginBottom: '0.75rem' }}>
+              Converted & Handled Journeys in Selected Month ({selectedEmployeeDetails.convertedLeads.length})
+            </h4>
+
+            {selectedEmployeeDetails.convertedLeads.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                No converted journeys recorded by this employee for the selected month.
+              </div>
+            ) : (
+              <div className="table-responsive" style={{ overflowX: 'auto' }}>
+                <table className="table" style={{ width: '100%', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
+                      <th>Guest Details</th>
+                      <th>Program / Route</th>
+                      <th>Dates</th>
+                      <th>Status</th>
+                      <th style={{ textAlign: 'right' }}>Booking Price</th>
+                      <th style={{ textAlign: 'center' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedEmployeeDetails.convertedLeads.map(l => (
+                      <tr key={l.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                        <td>
+                          <strong style={{ color: '#FFF' }}>{l.client_name}</strong>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{l.client_phone}</div>
+                        </td>
+                        <td>
+                          <div style={{ color: 'var(--accent-teal)', fontWeight: 600 }}>{l.itinerary_title || 'Custom Plan'}</div>
+                          <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{l.total_days || 1} Days</div>
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '0.78rem', color: 'var(--text-primary)' }}>
+                            {getCleanTravelDates(l)}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge badge-${l.status}`}>
+                            {l.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 700, color: '#C084FC' }}>
+                          Rs. {(parseFloat(l.itinerary_price) || 0).toLocaleString()}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <Link
+                            href={`/admin/itinerary/${l.id}`}
+                            className="btn btn-secondary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            target="_blank"
+                          >
+                            <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSelectedEmployeeDetails(null)}
+                style={{ padding: '0.4rem 1rem' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
   );

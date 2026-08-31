@@ -42,25 +42,26 @@ export class LeadModel {
     return res.rows;
   }
 
-  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null }, client = null) {
+  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const determinedSource = source || (partnerId ? 'partner' : 'direct');
+    const finalAttendedAt = attendedBy && !attendedAt ? new Date() : attendedAt;
     const res = await q(
-      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes, attended_by, attended_by_name, attended_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
        RETURNING *`,
-      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes]
+      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes, attendedBy, attendedByName, finalAttendedAt]
     );
     return res.rows[0];
   }
 
   static async update(id, fields, client = null) {
     const q = client ? client.query.bind(client) : query;
-    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes } = fields;
-
     const updates = [];
     const values = [];
     let idx = 1;
+
+    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes, attendedBy, attendedByName, attendedAt } = fields;
 
     if (clientName !== undefined) {
       updates.push(`client_name = $${idx++}`);
@@ -105,6 +106,18 @@ export class LeadModel {
       updates.push(`notes = $${idx++}`);
       values.push(notes);
     }
+    if (attendedBy !== undefined) {
+      updates.push(`attended_by = $${idx++}`);
+      values.push(attendedBy);
+    }
+    if (attendedByName !== undefined) {
+      updates.push(`attended_by_name = $${idx++}`);
+      values.push(attendedByName);
+    }
+    if (attendedAt !== undefined) {
+      updates.push(`attended_at = $${idx++}`);
+      values.push(attendedAt);
+    }
 
     if (updates.length === 0) {
       throw new Error('No fields provided to update lead');
@@ -119,6 +132,32 @@ export class LeadModel {
       values
     );
 
+    return res.rows[0] || null;
+  }
+
+  static async pickupLead(leadId, adminId, adminName) {
+    const res = await query(
+      `UPDATE leads
+       SET attended_by = $1,
+           attended_by_name = $2,
+           attended_at = CURRENT_TIMESTAMP
+       WHERE id = $3
+       RETURNING *`,
+      [adminId, adminName, leadId]
+    );
+    return res.rows[0] || null;
+  }
+
+  static async releaseLead(leadId) {
+    const res = await query(
+      `UPDATE leads
+       SET attended_by = NULL,
+           attended_by_name = NULL,
+           attended_at = NULL
+       WHERE id = $1
+       RETURNING *`,
+      [leadId]
+    );
     return res.rows[0] || null;
   }
 

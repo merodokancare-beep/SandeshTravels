@@ -171,9 +171,31 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS package_name VARCHAR(150),
       ADD COLUMN IF NOT EXISTS vehicle_type VARCHAR(100),
       ADD COLUMN IF NOT EXISTS notes TEXT,
+      ADD COLUMN IF NOT EXISTS attended_by INT REFERENCES admins(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS attended_by_name VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS attended_at TIMESTAMP,
       ALTER COLUMN travel_dates TYPE TEXT,
       ALTER COLUMN client_phone TYPE VARCHAR(100),
       ALTER COLUMN client_name TYPE VARCHAR(255);
+
+      -- Admin user enhancements for role-based permissions
+      ALTER TABLE admins
+      ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'admin',
+      ADD COLUMN IF NOT EXISTS modules JSONB DEFAULT '["crm","itinerary","fleet","dispatch","tracking","hotels","drivers","templates","partners","reports","users"]'::jsonb,
+      ADD COLUMN IF NOT EXISTS phone VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+      UPDATE admins 
+      SET role = 'admin' 
+      WHERE role IS NULL;
+
+      UPDATE admins 
+      SET modules = '["crm","itinerary","fleet","dispatch","tracking","hotels","drivers","templates","partners","reports","users"]'::jsonb 
+      WHERE modules IS NULL;
+
+      UPDATE admins 
+      SET is_active = TRUE 
+      WHERE is_active IS NULL;
 
       -- Backfill source column for website and partner leads
       UPDATE leads 

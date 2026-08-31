@@ -32,10 +32,28 @@ export class AuthController {
         );
       }
 
+      if (admin.is_active === false) {
+        return NextResponse.json(
+          { error: 'Account is deactivated. Please contact the administrator.' },
+          { status: 403 }
+        );
+      }
+
+      const role = admin.role || 'admin';
+      let modules = admin.modules;
+      if (typeof modules === 'string') {
+        try { modules = JSON.parse(modules); } catch (e) { modules = []; }
+      }
+      if (!Array.isArray(modules)) {
+        modules = ['crm', 'itinerary', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'partners', 'reports', 'users'];
+      }
+
       await setAdminSession({
         adminId: admin.id,
         username: admin.username,
         name: admin.name,
+        role: role,
+        modules: modules
       });
 
       return NextResponse.json({
@@ -43,7 +61,9 @@ export class AuthController {
         admin: {
           id: admin.id,
           username: admin.username,
-          name: admin.name
+          name: admin.name,
+          role: role,
+          modules: modules
         }
       });
     } catch (error) {

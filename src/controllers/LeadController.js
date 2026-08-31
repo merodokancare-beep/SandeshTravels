@@ -48,7 +48,7 @@ export class LeadController {
         );
       }
 
-      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate } = await request.json();
+      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate, action, attendedBy, attendedByName } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -68,6 +68,33 @@ export class LeadController {
         );
       }
 
+      // Handle direct pickup action
+      if (action === 'pickup') {
+        if (existingLead.status === 'completed' || existingLead.status === 'cancelled') {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Completed or cancelled journeys cannot be picked up.' },
+            { status: 400 }
+          );
+        }
+        const pickedLead = await LeadModel.pickupLead(leadId, session.adminId, session.name);
+        await client.query('COMMIT');
+        return NextResponse.json({
+          success: true,
+          lead: pickedLead
+        });
+      }
+
+      // Handle direct release action
+      if (action === 'release') {
+        const releasedLead = await LeadModel.releaseLead(leadId);
+        await client.query('COMMIT');
+        return NextResponse.json({
+          success: true,
+          lead: releasedLead
+        });
+      }
+
       // Enforce status transition constraint: Once Fleet Assigned, lead cannot revert back to New, Quoted, or Converted
       if (['new', 'quoted', 'converted'].includes(status) && (existingLead.status === 'assigned' || existingLead.status === 'completed')) {
         await client.query('ROLLBACK');
@@ -77,7 +104,28 @@ export class LeadController {
         );
       }
 
-      const updatedLead = await LeadModel.update(leadId, { clientName, clientPhone, travelDates, numTravelers, status, startDate }, client);
+      // If lead is being converted or updated and had no attendee, attribute to current session user
+      let finalAttendedBy = attendedBy !== undefined ? attendedBy : existingLead.attended_by;
+      let finalAttendedByName = attendedByName !== undefined ? attendedByName : existingLead.attended_by_name;
+      let finalAttendedAt = existingLead.attended_at;
+
+      if (!finalAttendedBy && (status === 'converted' || status === 'assigned')) {
+        finalAttendedBy = session.adminId;
+        finalAttendedByName = session.name;
+        finalAttendedAt = new Date();
+      }
+
+      const updatedLead = await LeadModel.update(leadId, {
+        clientName,
+        clientPhone,
+        travelDates,
+        numTravelers,
+        status,
+        startDate,
+        attendedBy: finalAttendedBy,
+        attendedByName: finalAttendedByName,
+        attendedAt: finalAttendedAt
+      }, client);
 
       // If status is converted or assigned, check for scheduling conflicts
       if (updatedLead.status === 'converted' || updatedLead.status === 'assigned') {
@@ -162,7 +210,10 @@ export class LeadController {
         source: determinedSource,
         packageName,
         vehicleType,
-        notes
+        notes,
+        attendedBy: session.adminId,
+        attendedByName: session.name,
+        attendedAt: new Date()
       }, client);
 
       // Generate itinerary if templates selected (supports multi-region)
