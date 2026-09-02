@@ -96,7 +96,29 @@ export function ToastItem({ toast, onClose }) {
         </div>
         {action && (
           <div style={{ marginTop: '0.5rem' }}>
-            {action}
+            {typeof action === 'object' && !action.$$typeof && action.label ? (
+              <button
+                onClick={action.onClick}
+                style={{
+                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '4px 10px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem',
+                  fontWeight: '600',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.4)'
+                }}
+              >
+                <i className="fa-solid fa-arrow-right"></i> {action.label}
+              </button>
+            ) : (
+              action
+            )}
           </div>
         )}
       </div>
