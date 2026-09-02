@@ -14,6 +14,120 @@ function getTodayDateString() {
   return `${y}-${m}-${d}`;
 }
 
+function parseLocalDateString(dateInput) {
+  if (!dateInput) return '';
+  const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
+  if (!isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+  return String(dateInput).substring(0, 10);
+}
+
+function getActualDayDate(startDateStr, dayNumber) {
+  if (!startDateStr || !dayNumber) return null;
+  const parts = String(startDateStr).split('-');
+  if (parts.length !== 3) return null;
+  const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+  d.setDate(d.getDate() + (dayNumber - 1));
+  return d;
+}
+
+function getIsoDateForDay(startDateStr, dayNum) {
+  if (!startDateStr) return '';
+  const cleanDateStr = parseLocalDateString(startDateStr);
+  const parts = cleanDateStr.split('-');
+  if (parts.length !== 3) return '';
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1;
+  const day = parseInt(parts[2], 10);
+  const date = new Date(year, month, day);
+  date.setDate(date.getDate() + (dayNum - 1));
+  
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const dStr = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dStr}`;
+}
+
+function getLeadSourceInfo(lead) {
+  if (!lead) return { type: 'direct', label: 'Direct Guest', badgeClass: 'badge-direct', icon: 'fa-phone', sourceName: 'Walk-in / Direct' };
+  
+  const isWebsite = lead.source === 'website' || 
+    (lead.travel_dates && (lead.travel_dates.includes('Website') || lead.travel_dates.includes('🌐')));
+
+  if (lead.partner_name || lead.partner_id) {
+    return {
+      type: 'partner',
+      label: 'B2B Partner',
+      badgeClass: 'badge-partner',
+      icon: 'fa-hotel',
+      name: lead.partner_name || 'B2B Hotel',
+      rate: lead.commission_rate
+    };
+  }
+
+  if (isWebsite) {
+    let pkg = lead.package_name;
+    let vehicle = lead.vehicle_type;
+    let notes = lead.notes;
+
+    if (!pkg && lead.travel_dates) {
+      const matchPkg = lead.travel_dates.match(/\[([^\]]+)\]/g);
+      if (matchPkg && matchPkg.length > 0) {
+        const pkgMatch = matchPkg.find(m => !m.includes('Website') && !m.includes('Vehicle'));
+        if (pkgMatch) {
+          pkg = pkgMatch.replace('[', '').replace(']', '');
+        }
+      }
+    }
+
+    if (!vehicle && lead.travel_dates && lead.travel_dates.includes('Vehicle:')) {
+      const vMatch = lead.travel_dates.match(/Vehicle:\s*([^\]|]+)/);
+      if (vMatch) {
+        vehicle = vMatch[1].trim();
+      }
+    }
+
+    return {
+      type: 'website',
+      label: 'Website Online',
+      badgeClass: 'badge-website',
+      icon: 'fa-globe',
+      sourceName: 'Sandesh Travels',
+      pkg,
+      vehicle,
+      notes
+    };
+  }
+
+  return {
+    type: 'direct',
+    label: 'Direct Guest',
+    badgeClass: 'badge-direct',
+    icon: 'fa-phone',
+    sourceName: 'Walk-in / Direct'
+  };
+}
+
+function getCleanTravelDates(lead) {
+  if (!lead) return 'Dates not set';
+  if (lead.start_date) {
+    return `Starts: ${new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  }
+  if (!lead.travel_dates) return 'Dates not set';
+
+  if (lead.travel_dates.includes('|')) {
+    const parts = lead.travel_dates.split('|').map(p => p.trim());
+    const datePart = parts.find(p => !p.includes('Website') && !p.includes('[') && !p.includes('Notes:'));
+    if (datePart) return datePart;
+  }
+  const cleaned = lead.travel_dates.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
+  return cleaned || 'Dates not set';
+}
+
 export default function AdminDashboard() {
   const [admin, setAdmin] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -384,17 +498,6 @@ export default function AdminDashboard() {
     } finally {
       setActionLoading(false);
     }
-  };
-
-  // Helper: compute the actual calendar date for a given itinerary day
-  // e.g. start_date=2026-08-31, day_number=2 → 2026-09-01
-  const getActualDayDate = (startDateStr, dayNumber) => {
-    if (!startDateStr || !dayNumber) return null;
-    const parts = String(startDateStr).split('-');
-    if (parts.length !== 3) return null;
-    const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    d.setDate(d.getDate() + (dayNumber - 1));
-    return d; // local Date object, no UTC shift
   };
 
   const getMonthlyDriverReportList = () => {
@@ -980,35 +1083,6 @@ export default function AdminDashboard() {
     
     const cleanPhone = j.lead.client_phone.replace(/\D/g, '');
     return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
-  };
-
-  const parseLocalDateString = (dateInput) => {
-    if (!dateInput) return '';
-    const d = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    if (!isNaN(d.getTime())) {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    }
-    return String(dateInput).substring(0, 10);
-  };
-
-  const getIsoDateForDay = (startDateStr, dayNum) => {
-    if (!startDateStr) return '';
-    const cleanDateStr = parseLocalDateString(startDateStr);
-    const parts = cleanDateStr.split('-');
-    if (parts.length !== 3) return '';
-    const year = parseInt(parts[0], 10);
-    const month = parseInt(parts[1], 10) - 1;
-    const day = parseInt(parts[2], 10);
-    const date = new Date(year, month, day);
-    date.setDate(date.getDate() + (dayNum - 1));
-    
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const dStr = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${dStr}`;
   };
 
   const isDriverFreeOnDate = (d, leadId, startDate, dayNumber) => {
@@ -1696,80 +1770,6 @@ export default function AdminDashboard() {
   };
 
   const next7Days = getNext7Days();
-
-  // Helper to extract lead source details and tags
-  const getLeadSourceInfo = (lead) => {
-    const isWebsite = lead.source === 'website' || 
-      (lead.travel_dates && (lead.travel_dates.includes('Website') || lead.travel_dates.includes('🌐')));
-
-    if (lead.partner_name || lead.partner_id) {
-      return {
-        type: 'partner',
-        label: 'B2B Partner',
-        badgeClass: 'badge-partner',
-        icon: 'fa-hotel',
-        name: lead.partner_name || 'B2B Hotel',
-        rate: lead.commission_rate
-      };
-    }
-
-    if (isWebsite) {
-      let pkg = lead.package_name;
-      let vehicle = lead.vehicle_type;
-      let notes = lead.notes;
-
-      if (!pkg && lead.travel_dates) {
-        const matchPkg = lead.travel_dates.match(/\[([^\]]+)\]/g);
-        if (matchPkg && matchPkg.length > 0) {
-          const pkgMatch = matchPkg.find(m => !m.includes('Website') && !m.includes('Vehicle'));
-          if (pkgMatch) {
-            pkg = pkgMatch.replace('[', '').replace(']', '');
-          }
-        }
-      }
-
-      if (!vehicle && lead.travel_dates && lead.travel_dates.includes('Vehicle:')) {
-        const vMatch = lead.travel_dates.match(/Vehicle:\s*([^\]|]+)/);
-        if (vMatch) {
-          vehicle = vMatch[1].trim();
-        }
-      }
-
-      return {
-        type: 'website',
-        label: 'Website Online',
-        badgeClass: 'badge-website',
-        icon: 'fa-globe',
-        sourceName: 'Sandesh Travels',
-        pkg,
-        vehicle,
-        notes
-      };
-    }
-
-    return {
-      type: 'direct',
-      label: 'Direct Guest',
-      badgeClass: 'badge-direct',
-      icon: 'fa-phone',
-      sourceName: 'Walk-in / Direct'
-    };
-  };
-
-  const getCleanTravelDates = (lead) => {
-    if (lead.start_date) {
-      return `Starts: ${new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
-    }
-    if (!lead.travel_dates) return 'Dates not set';
-
-    if (lead.travel_dates.includes('|')) {
-      const parts = lead.travel_dates.split('|').map(p => p.trim());
-      const datePart = parts.find(p => !p.includes('Website') && !p.includes('[') && !p.includes('Notes:'));
-      if (datePart) return datePart;
-    }
-    const cleaned = lead.travel_dates.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
-    return cleaned || 'Dates not set';
-  };
 
   // Filtered Leads list
   const filteredLeads = leads.filter(lead => {
