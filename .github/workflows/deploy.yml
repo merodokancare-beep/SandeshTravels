@@ -1,0 +1,33 @@
+name: Deploy to Production VPS
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to VPS via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd /var/www/crm.sandeshtravels.in
+            echo "Pulling latest code from GitHub..."
+            git reset --hard HEAD
+            git pull origin main || git pull origin master
+            echo "Installing dependencies..."
+            npm install --production=false
+            echo "Building Next.js application..."
+            npm run build
+            echo "Reloading PM2 process..."
+            pm2 reload sandesh-crm || pm2 start npm --name "sandesh-crm" -- start -- -p 3001
+            pm2 save
+            echo "Deployment successfully completed!"

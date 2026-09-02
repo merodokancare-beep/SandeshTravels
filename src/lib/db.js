@@ -111,17 +111,6 @@ export async function initDb() {
         vehicle_owner VARCHAR(100)
       );
       ALTER TABLE drivers_registry ADD COLUMN IF NOT EXISTS vehicle_owner VARCHAR(100);
-
-      -- Migration: Upgrade existing leads with driver assignments to 'assigned' status
-      UPDATE leads 
-      SET status = 'assigned' 
-      WHERE status IN ('new', 'quoted', 'converted') 
-        AND id IN (
-          SELECT DISTINCT i.lead_id 
-          FROM itinerary_days id_day 
-          JOIN itineraries i ON id_day.itinerary_id = i.id 
-          WHERE id_day.driver_id IS NOT NULL
-        );
     `);
 
     // 5. Itineraries
@@ -223,6 +212,17 @@ export async function initDb() {
       FROM drivers_registry d
       WHERE id_day.driver_id = d.id
         AND id_day.driver_name_snapshot IS NULL;
+
+      -- Migration: Upgrade existing leads with driver assignments to 'assigned' status
+      UPDATE leads 
+      SET status = 'assigned' 
+      WHERE status IN ('new', 'quoted', 'converted') 
+        AND id IN (
+          SELECT DISTINCT i.lead_id 
+          FROM itinerary_days id_day 
+          JOIN itineraries i ON id_day.itinerary_id = i.id 
+          WHERE id_day.driver_id IS NOT NULL
+        );
     `);
 
     // 8. Itinerary Preset Templates
