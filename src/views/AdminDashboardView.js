@@ -168,6 +168,7 @@ export default function AdminDashboard() {
 
   const SYSTEM_MODULES = [
     { key: 'crm', label: 'Leads CRM', icon: 'fa-address-book', desc: 'Manage incoming enquiries, attendee pickup & conversions' },
+    { key: 'itinerary', label: 'Itineraries & Quotes', icon: 'fa-file-lines', desc: 'Create and customize day-by-day travel itineraries' },
     { key: 'fleet', label: 'Fleet Schedule', icon: 'fa-car-side', desc: 'Calendar timeline and vehicle availability grid' },
     { key: 'dispatch', label: 'Fleet Assignment', icon: 'fa-key', desc: 'Assign driver and vehicle fleet to itineraries' },
     { key: 'tracking', label: 'Journey Tracking', icon: 'fa-route', desc: 'Live, upcoming, and completed journey tracking' },
@@ -177,6 +178,24 @@ export default function AdminDashboard() {
     { key: 'templates', label: 'Itinerary Master', icon: 'fa-compass', desc: 'Pre-defined regional travel templates' },
     { key: 'reports', label: 'Reports & Analytics', icon: 'fa-chart-pie', desc: 'Revenue, driver tours, and employee performance' }
   ];
+
+  const getModuleInfo = (mKey) => {
+    const map = {
+      crm: { label: 'Leads CRM', icon: 'fa-address-book', color: '#38BDF8', bg: 'rgba(56,189,248,0.08)' },
+      leads: { label: 'Leads CRM', icon: 'fa-address-book', color: '#38BDF8', bg: 'rgba(56,189,248,0.08)' },
+      itinerary: { label: 'Itineraries', icon: 'fa-file-lines', color: '#818CF8', bg: 'rgba(129,140,248,0.08)' },
+      dispatch: { label: 'Fleet Assignment', icon: 'fa-key', color: '#FBBF24', bg: 'rgba(251,191,36,0.08)' },
+      fleet: { label: 'Fleet Schedule', icon: 'fa-car-side', color: '#34D399', bg: 'rgba(52,211,153,0.08)' },
+      tracking: { label: 'Journey Tracking', icon: 'fa-route', color: '#F472B6', bg: 'rgba(244,114,182,0.08)' },
+      hotels: { label: 'Hotels Registry', icon: 'fa-hotel', color: '#A78BFA', bg: 'rgba(167,139,250,0.08)' },
+      partners: { label: 'Partners Master', icon: 'fa-handshake', color: '#FB923C', bg: 'rgba(251,146,60,0.08)' },
+      drivers: { label: 'Drivers Registry', icon: 'fa-id-card', color: '#2DD4BF', bg: 'rgba(45,212,191,0.08)' },
+      templates: { label: 'Itinerary Master', icon: 'fa-compass', color: '#C084FC', bg: 'rgba(192,132,252,0.08)' },
+      reports: { label: 'Reports & Analytics', icon: 'fa-chart-pie', color: '#67E8F9', bg: 'rgba(103,232,249,0.08)' },
+      users: { label: 'Team Access', icon: 'fa-users-gear', color: '#E879F9', bg: 'rgba(232,121,249,0.08)' }
+    };
+    return map[mKey] || { label: mKey.charAt(0).toUpperCase() + mKey.slice(1), icon: 'fa-folder', color: '#94A3B8', bg: 'rgba(255,255,255,0.04)' };
+  };
 
   const canAccess = (moduleKey) => {
     if (!admin) return true;
@@ -2709,7 +2728,7 @@ export default function AdminDashboard() {
               };
 
               const cleanGuestPhone = activeCellDetails.client_phone.replace(/\D/g, '');
-              const guestWhatsAppUrl = `https://api.whatsapp.com/send?phone=${cleanGuestPhone}&text=${encodeURIComponent(`Hi ${activeCellDetails.client_name}, this is Sandesh Travels contacting you regarding your ongoing transport booking.`)}`;
+              const guestWhatsAppUrl = `https://web.whatsapp.com/send?phone=${cleanGuestPhone}&text=${encodeURIComponent(`Hi ${activeCellDetails.client_name}, this is Sandesh Travels contacting you regarding your ongoing transport booking.`)}`;
 
               return (
                 <div 
@@ -2755,8 +2774,8 @@ export default function AdminDashboard() {
                     <div style={{ display: 'flex', gap: '0.75rem', minWidth: '220px', justifyContent: 'flex-end', alignSelf: 'center' }}>
                       <a 
                         href={guestWhatsAppUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
+                        target="whatsapp_web" 
+                        rel="noopener" 
                         className="btn btn-primary"
                         style={{ background: '#25D366', border: 'none', padding: '0.5rem 0.75rem', fontSize: '0.8rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
                       >
@@ -4657,104 +4676,263 @@ export default function AdminDashboard() {
             </div>
 
             {/* Users Table */}
-            <div className="table-responsive" style={{ overflowX: 'auto' }}>
-              <table className="table" style={{ width: '100%', fontSize: '0.85rem' }}>
+            <div className="table-responsive" style={{ overflowX: 'auto', borderRadius: '12px', border: '1px solid var(--border)', background: 'var(--bg-surface)' }}>
+              <table className="table" style={{ width: '100%', fontSize: '0.85rem', margin: 0, borderCollapse: 'separate', borderSpacing: 0 }}>
                 <thead>
-                  <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '2px solid var(--border)' }}>
-                    <th>Employee Name</th>
-                    <th>Login Username</th>
-                    <th>Role</th>
-                    <th>Assigned Modules & Permissions</th>
-                    <th>Status</th>
-                    <th style={{ textAlign: 'center' }}>Actions</th>
+                  <tr style={{ background: 'rgba(255, 255, 255, 0.03)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <i className="fa-solid fa-user" style={{ marginRight: '0.4rem', color: 'var(--accent-teal)' }}></i> Employee Name
+                    </th>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <i className="fa-solid fa-at" style={{ marginRight: '0.4rem', color: '#38BDF8' }}></i> Login Username
+                    </th>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <i className="fa-solid fa-shield-halved" style={{ marginRight: '0.4rem', color: '#818CF8' }}></i> Role
+                    </th>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      <i className="fa-solid fa-sliders" style={{ marginRight: '0.4rem', color: '#FBBF24' }}></i> Assigned Modules & Permissions
+                    </th>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>
+                      <i className="fa-solid fa-signal" style={{ marginRight: '0.4rem', color: '#34D399' }}></i> Status
+                    </th>
+                    <th style={{ padding: '0.9rem 1rem', color: 'var(--text-secondary)', fontWeight: 600, fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.5px', textAlign: 'center' }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {staffUsers.length === 0 ? (
                     <tr>
-                      <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                        <i className="fa-solid fa-users-slash" style={{ fontSize: '2rem', marginBottom: '0.75rem', display: 'block', opacity: 0.5 }}></i>
                         No staff accounts found. Click "Add New Employee" to create one.
                       </td>
                     </tr>
                   ) : (
-                    staffUsers.map(u => {
+                    staffUsers.map((u, idx) => {
                       let uMods = u.modules;
                       if (typeof uMods === 'string') {
                         try { uMods = JSON.parse(uMods); } catch (e) { uMods = []; }
                       }
                       if (!Array.isArray(uMods)) uMods = [];
 
+                      const initials = (u.name || 'U')
+                        .split(' ')
+                        .map(n => n[0])
+                        .slice(0, 2)
+                        .join('')
+                        .toUpperCase();
+
+                      const isFullAccess = u.role === 'admin' || (uMods.length >= SYSTEM_MODULES.length && SYSTEM_MODULES.every(sm => uMods.includes(sm.key)));
+
                       return (
-                        <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                          <td>
-                            <div style={{ fontWeight: 700, color: '#FFF' }}>{u.name}</div>
-                            {u.phone && <div style={{ fontSize: '0.75rem', color: 'var(--accent-teal)' }}>📞 {u.phone}</div>}
+                        <tr 
+                          key={u.id} 
+                          style={{ 
+                            borderBottom: idx === staffUsers.length - 1 ? 'none' : '1px solid rgba(255,255,255,0.06)',
+                            background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.015)',
+                            verticalAlign: 'middle'
+                          }}
+                        >
+                          <td style={{ padding: '1rem' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <div style={{
+                                width: '36px',
+                                height: '36px',
+                                borderRadius: '50%',
+                                background: u.role === 'admin' 
+                                  ? 'linear-gradient(135deg, rgba(99,102,241,0.25), rgba(168,85,247,0.25))' 
+                                  : 'linear-gradient(135deg, rgba(20,184,166,0.25), rgba(56,189,248,0.25))',
+                                border: u.role === 'admin' 
+                                  ? '1px solid rgba(99,102,241,0.4)' 
+                                  : '1px solid rgba(20,184,166,0.4)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontWeight: 800,
+                                fontSize: '0.85rem',
+                                color: u.role === 'admin' ? '#A5B4FC' : '#2DD4BF',
+                                flexShrink: 0
+                              }}>
+                                {initials}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 700, color: '#FFF', fontSize: '0.9rem' }}>{u.name}</div>
+                                {u.phone ? (
+                                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.15rem' }}>
+                                    <i className="fa-solid fa-phone" style={{ fontSize: '0.65rem', color: 'var(--accent-teal)' }}></i>
+                                    <span>{u.phone}</span>
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>No phone linked</div>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td>
-                            <code style={{ background: 'rgba(255,255,255,0.06)', padding: '0.2rem 0.4rem', borderRadius: '4px', color: '#38bdf8' }}>
+
+                          <td style={{ padding: '1rem' }}>
+                            <code style={{ 
+                              background: 'rgba(56,189,248,0.08)', 
+                              border: '1px solid rgba(56,189,248,0.2)', 
+                              padding: '0.25rem 0.55rem', 
+                              borderRadius: '6px', 
+                              color: '#38BDF8',
+                              fontWeight: 600,
+                              fontSize: '0.8rem',
+                              letterSpacing: '0.3px'
+                            }}>
                               @{u.username}
                             </code>
                           </td>
-                          <td>
-                            <span className="badge" style={{ 
-                              background: u.role === 'admin' ? 'rgba(99,102,241,0.15)' : 'rgba(20,184,166,0.15)',
-                              color: u.role === 'admin' ? '#818CF8' : '#2DD4BF',
-                              border: u.role === 'admin' ? '1px solid rgba(99,102,241,0.3)' : '1px solid rgba(20,184,166,0.3)',
-                              fontSize: '0.75rem'
-                            }}>
-                              {u.role === 'admin' ? 'Root Administrator' : 'Staff / Employee'}
-                            </span>
-                          </td>
-                          <td>
+
+                          <td style={{ padding: '1rem' }}>
                             {u.role === 'admin' ? (
-                              <span style={{ fontSize: '0.78rem', color: '#34D399', fontWeight: 600 }}>
-                                <i className="fa-solid fa-circle-check" style={{ marginRight: '0.3rem' }}></i> All Modules Permitted (Full Access)
+                              <span style={{ 
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.3rem 0.65rem',
+                                borderRadius: '20px',
+                                background: 'rgba(99,102,241,0.15)',
+                                color: '#A5B4FC',
+                                border: '1px solid rgba(99,102,241,0.3)',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                letterSpacing: '0.3px'
+                              }}>
+                                <i className="fa-solid fa-crown" style={{ color: '#F59E0B', fontSize: '0.7rem' }}></i> ROOT ADMIN
                               </span>
                             ) : (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', maxWidth: '380px' }}>
-                                {uMods.length === 0 ? (
-                                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No modules assigned</span>
-                                ) : (
-                                  uMods.map(mKey => {
-                                    const modInfo = SYSTEM_MODULES.find(sm => sm.key === mKey);
+                              <span style={{ 
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.3rem 0.65rem',
+                                borderRadius: '20px',
+                                background: 'rgba(20,184,166,0.15)',
+                                color: '#2DD4BF',
+                                border: '1px solid rgba(20,184,166,0.3)',
+                                fontSize: '0.75rem',
+                                fontWeight: 700,
+                                letterSpacing: '0.3px'
+                              }}>
+                                <i className="fa-solid fa-user-tie" style={{ fontSize: '0.7rem' }}></i> STAFF EXECUTIVE
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: '1rem' }}>
+                            {isFullAccess ? (
+                              <div style={{ 
+                                display: 'inline-flex', 
+                                alignItems: 'center', 
+                                gap: '0.45rem', 
+                                padding: '0.35rem 0.75rem', 
+                                borderRadius: '20px', 
+                                background: 'rgba(16,185,129,0.12)', 
+                                border: '1px solid rgba(16,185,129,0.3)', 
+                                color: '#34D399', 
+                                fontSize: '0.78rem', 
+                                fontWeight: 600 
+                              }}>
+                                <i className="fa-solid fa-circle-check"></i> All Modules Permitted (Full Access)
+                              </div>
+                            ) : uMods.length === 0 ? (
+                              <span style={{ fontSize: '0.75rem', color: '#F87171', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <i className="fa-solid fa-triangle-exclamation"></i> No modules assigned
+                              </span>
+                            ) : (
+                              <div>
+                                <div style={{ 
+                                  display: 'grid', 
+                                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', 
+                                  gap: '0.35rem',
+                                  maxWidth: '480px'
+                                }}>
+                                  {uMods.map(mKey => {
+                                    const modInfo = getModuleInfo(mKey);
                                     return (
-                                      <span key={mKey} style={{ 
-                                        fontSize: '0.7rem', 
-                                        padding: '0.15rem 0.45rem', 
-                                        borderRadius: '4px', 
-                                        background: 'rgba(255,255,255,0.05)', 
-                                        border: '1px solid var(--border)',
-                                        color: 'var(--text-primary)',
-                                        display: 'inline-flex',
-                                        alignItems: 'center',
-                                        gap: '0.25rem'
-                                      }}>
-                                        <i className={`fa-solid ${modInfo?.icon || 'fa-folder'}`} style={{ fontSize: '0.65rem', color: 'var(--accent-teal)' }}></i>
-                                        {modInfo?.label || mKey}
-                                      </span>
+                                      <div 
+                                        key={mKey} 
+                                        style={{ 
+                                          fontSize: '0.72rem', 
+                                          padding: '0.25rem 0.55rem', 
+                                          borderRadius: '6px', 
+                                          background: modInfo.bg || 'rgba(255,255,255,0.04)', 
+                                          border: `1px solid ${modInfo.color}33`,
+                                          color: '#F1F5F9',
+                                          display: 'flex',
+                                          alignItems: 'center',
+                                          gap: '0.4rem',
+                                          whiteSpace: 'nowrap',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis'
+                                        }}
+                                        title={modInfo.label}
+                                      >
+                                        <i className={`fa-solid ${modInfo.icon}`} style={{ fontSize: '0.7rem', color: modInfo.color, flexShrink: 0 }}></i>
+                                        <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis' }}>{modInfo.label}</span>
+                                      </div>
                                     );
-                                  })
-                                )}
+                                  })}
+                                </div>
                               </div>
                             )}
                           </td>
-                          <td>
+
+                          <td style={{ padding: '1rem', textAlign: 'center' }}>
                             {u.is_active !== false ? (
-                              <span className="badge badge-completed" style={{ fontSize: '0.75rem' }}>Active</span>
+                              <span style={{ 
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '12px',
+                                background: 'rgba(16,185,129,0.12)',
+                                color: '#34D399',
+                                border: '1px solid rgba(16,185,129,0.3)',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                              }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#34D399', boxShadow: '0 0 6px #34D399' }}></span> ACTIVE
+                              </span>
                             ) : (
-                              <span className="badge badge-cancelled" style={{ fontSize: '0.75rem' }}>Deactivated</span>
+                              <span style={{ 
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.35rem',
+                                padding: '0.25rem 0.55rem',
+                                borderRadius: '12px',
+                                background: 'rgba(239,68,68,0.12)',
+                                color: '#F87171',
+                                border: '1px solid rgba(239,68,68,0.3)',
+                                fontSize: '0.72rem',
+                                fontWeight: 700
+                              }}>
+                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#F87171' }}></span> DISABLED
+                              </span>
                             )}
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+
+                          <td style={{ padding: '1rem', textAlign: 'center' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.4rem', justifyContent: 'center' }}>
                               <button
                                 type="button"
                                 className="btn btn-secondary"
                                 onClick={() => handleOpenEditUserModal(u)}
-                                style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem' }}
+                                style={{ 
+                                  padding: '0.35rem 0.65rem', 
+                                  fontSize: '0.75rem',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  borderRadius: '6px',
+                                  borderColor: 'rgba(20,184,166,0.3)',
+                                  color: '#2DD4BF'
+                                }}
                                 title="Edit user details & module permissions"
                               >
-                                <i className="fa-solid fa-user-pen" style={{ color: 'var(--accent-teal)' }}></i> Edit
+                                <i className="fa-solid fa-pen-to-square"></i> Edit
                               </button>
 
                               {u.id !== admin?.id && (
@@ -4762,7 +4940,13 @@ export default function AdminDashboard() {
                                   type="button"
                                   className="btn btn-secondary"
                                   onClick={() => handleDeleteUser(u)}
-                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem', color: '#EF4444' }}
+                                  style={{ 
+                                    padding: '0.35rem 0.6rem', 
+                                    fontSize: '0.75rem', 
+                                    color: '#EF4444',
+                                    borderRadius: '6px',
+                                    borderColor: 'rgba(239,68,68,0.3)'
+                                  }}
                                   title="Delete user"
                                 >
                                   <i className="fa-solid fa-trash-can"></i>

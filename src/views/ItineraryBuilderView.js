@@ -711,7 +711,15 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     
     // Clean phone number (remove all non-digits)
     const cleanPhone = lead.client_phone.replace(/\D/g, '');
-    return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(text)}`;
+    return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(text)}`;
+  };
+
+  const handleOpenWhatsAppWeb = (e) => {
+    e.preventDefault();
+    const url = getWhatsAppLink();
+    if (url && url !== '#') {
+      window.open(url, 'whatsapp_web');
+    }
   };
 
   if (loading) {
@@ -792,11 +800,12 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
               )}
               <a 
                 href={getWhatsAppLink()}
-                target="_blank" 
-                rel="noopener noreferrer"
+                target="whatsapp_web" 
+                rel="noopener"
+                onClick={handleOpenWhatsAppWeb}
                 className="btn btn-secondary"
                 style={{ borderColor: '#25D366', color: '#25D366', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
-                title="Open WhatsApp chat with traveler directly from your browser"
+                title="Open WhatsApp chat with traveler in your existing WhatsApp Web tab"
               >
                 <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
               </a>

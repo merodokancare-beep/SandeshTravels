@@ -107,7 +107,7 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
     msg += `✅ *Total Amount Paid:* ₹${computedTotal.toLocaleString('en-IN')}\n\n`;
     msg += `Thank you for choosing Sandesh Travels for your journey! 🚗 Wish you all the best.`;
 
-    return `https://api.whatsapp.com/send?phone=${clientPhone}&text=${encodeURIComponent(msg)}`;
+    return `https://web.whatsapp.com/send?phone=${clientPhone}&text=${encodeURIComponent(msg)}`;
   };
 
   return (
@@ -196,8 +196,8 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
 
           <a 
             href={getWhatsAppShareUrl()} 
-            target="_blank" 
-            rel="noopener noreferrer" 
+            target="whatsapp_web" 
+            rel="noopener" 
             className="btn btn-primary"
             style={{ background: '#25D366', border: 'none', padding: '0.5rem 1rem', fontSize: '0.85rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
           >
