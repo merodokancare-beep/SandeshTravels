@@ -677,49 +677,29 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     }
   };
 
-  const getWhatsAppLink = () => {
-    if (!lead || !itineraryId) return '#';
+
+  const getWhatsAppMessageText = () => {
+    if (!lead || !itineraryId) return '';
     const guestItineraryUrl = `${window.location.origin}/itinerary/${itineraryId}`;
-    
-    // Find if there is an assigned driver in any day
     const assignedDay = days.find(d => d.driverId) || {};
     const driver = drivers.find(drv => String(drv.id) === String(assignedDay.driverId));
     const hasDriver = !!driver;
-    
-    let text = '';
     
     if ((lead.status === 'converted' || lead.status === 'completed') && hasDriver) {
       const formattedStartDate = startDate 
         ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
         : 'Flexible';
         
-      text = `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n`;
-      text += `*JOURNEY DETAILS:*\n`;
-      text += `• Route: ${title}\n`;
-      text += `• Start Date: ${formattedStartDate}\n`;
-      text += `• Duration: ${totalDays} Days\n`;
-      text += `• Overall Price: Rs. ${price}\n\n`;
-      text += `*ASSIGNED DRIVER & VEHICLE:*\n`;
-      text += `• Driver Name: ${driver.driver_name}\n`;
-      text += `• Driver Contact: ${driver.driver_phone}\n`;
-      text += `• Vehicle: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\n`;
-      text += `Please click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
-    } else {
-      // Default quotation message
-      text = `Hi ${lead.client_name}, this is Sandesh Travels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
+      return `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n*JOURNEY DETAILS:*\n• Route: ${title}\n• Start Date: ${formattedStartDate}\n• Duration: ${totalDays} Days\n• Overall Price: Rs. ${price}\n\n*ASSIGNED DRIVER & VEHICLE:*\n• Driver Name: ${driver.driver_name}\n• Driver Contact: ${driver.driver_phone}\n• Vehicle: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\nPlease click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
     }
-    
-    // Clean phone number (remove all non-digits)
-    const cleanPhone = lead.client_phone.replace(/\D/g, '');
-    return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(text)}`;
+    return `Hi ${lead.client_name}, this is Sandesh Travels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
   };
 
-  const handleOpenWhatsAppWeb = (e) => {
-    e.preventDefault();
-    const url = getWhatsAppLink();
-    if (url && url !== '#') {
-      window.open(url, 'whatsapp_web');
-    }
+  const getWhatsAppLink = () => {
+    if (!lead || !itineraryId) return '#';
+    const text = getWhatsAppMessageText();
+    const cleanPhone = (lead.client_phone || '').replace(/\D/g, '');
+    return `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(text)}`;
   };
 
   if (loading) {
@@ -769,7 +749,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         </div>
         <div>
           {itineraryId && (
-            <div style={{ display: 'flex', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <a 
                 href={`/itinerary/${itineraryId}`} 
                 target="_blank" 
@@ -798,17 +778,18 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   <i className="fa-solid fa-file-invoice-dollar"></i> Bill Invoice
                 </Link>
               )}
+
               <a 
                 href={getWhatsAppLink()}
-                target="whatsapp_web" 
-                rel="noopener"
-                onClick={handleOpenWhatsAppWeb}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn btn-secondary"
                 style={{ borderColor: '#25D366', color: '#25D366', fontWeight: '600', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
-                title="Open WhatsApp chat with traveler in your existing WhatsApp Web tab"
+                title="Open WhatsApp Web chat"
               >
                 <i className="fa-brands fa-whatsapp"></i> Open WhatsApp Web
               </a>
+
               {lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && days.some(d => d.driverId) ? (
                 <>
                   <button 

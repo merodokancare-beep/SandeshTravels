@@ -197,7 +197,6 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
           <a 
             href={getWhatsAppShareUrl()} 
             target="whatsapp_web" 
-            rel="noopener" 
             className="btn btn-primary"
             style={{ background: '#25D366', border: 'none', padding: '0.5rem 1rem', fontSize: '0.85rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
           >
