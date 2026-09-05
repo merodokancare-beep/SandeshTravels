@@ -2693,8 +2693,8 @@ export default function AdminDashboard() {
                             )}
                           </div>
                         </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+                        <td style={{ minWidth: '220px' }}>
+                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             {lead.payment_status === 'pending_verification' && (
                               <button
                                 type="button"
@@ -2702,8 +2702,8 @@ export default function AdminDashboard() {
                                 disabled={actionLoading}
                                 className="btn"
                                 style={{
-                                  padding: '0.4rem 0.75rem',
-                                  fontSize: '0.78rem',
+                                  padding: '0.35rem 0.65rem',
+                                  fontSize: '0.75rem',
                                   background: 'linear-gradient(135deg, #10B981, #059669)',
                                   color: '#FFF',
                                   fontWeight: '700',
@@ -2711,8 +2711,9 @@ export default function AdminDashboard() {
                                   borderRadius: '4px',
                                   display: 'inline-flex',
                                   alignItems: 'center',
-                                  gap: '0.35rem',
-                                  boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                                  gap: '0.3rem',
+                                  boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
+                                  whiteSpace: 'nowrap'
                                 }}
                                 title="Verify 10% advance deposit and confirm booking"
                               >
@@ -2725,11 +2726,11 @@ export default function AdminDashboard() {
                                 href={`/admin/itinerary/${lead.id}`} 
                                 className="btn btn-primary"
                                 style={{ 
-                                  padding: '0.4rem 0.75rem', 
-                                  fontSize: '0.8rem', 
+                                  padding: '0.35rem 0.65rem', 
+                                  fontSize: '0.75rem', 
                                   display: 'inline-flex', 
                                   alignItems: 'center', 
-                                  gap: '0.35rem', 
+                                  gap: '0.3rem', 
                                   whiteSpace: 'nowrap',
                                   fontWeight: '600'
                                 }}
@@ -2744,7 +2745,7 @@ export default function AdminDashboard() {
                                 onClick={() => handleRecordManualAdvance(lead.id)}
                                 disabled={actionLoading}
                                 className="btn btn-outline"
-                                style={{ padding: '0.4rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                style={{ padding: '0.35rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                                 title="Record manual cash or offline bank advance"
                               >
                                 <i className="fa-solid fa-hand-holding-dollar"></i> Log Advance
@@ -2759,25 +2760,25 @@ export default function AdminDashboard() {
                                   rel="noopener noreferrer"
                                   className="btn btn-secondary"
                                   style={{ 
-                                    padding: '0.4rem 0.65rem', 
-                                    fontSize: '0.78rem', 
+                                    padding: '0.35rem 0.6rem', 
+                                    fontSize: '0.75rem', 
                                     color: '#25D366', 
                                     borderColor: 'rgba(37, 211, 102, 0.4)', 
                                     background: 'rgba(37, 211, 102, 0.12)', 
                                     display: 'inline-flex', 
                                     alignItems: 'center', 
-                                    gap: '0.35rem', 
+                                    gap: '0.3rem', 
                                     whiteSpace: 'nowrap',
                                     fontWeight: '600'
                                   }}
                                   title="Send Booking Confirmation & Advance Receipt to Client via WhatsApp"
                                 >
-                                  <i className="fa-brands fa-whatsapp fa-lg"></i> Send Confirmation
+                                  <i className="fa-brands fa-whatsapp fa-lg"></i> Confirm WA
                                 </a>
                                 <Link 
                                   href={`/admin/itinerary/${lead.id}`} 
                                   className="btn btn-secondary"
-                                  style={{ padding: '0.4rem 0.65rem', fontSize: '0.8rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem', color: '#FFF', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                                 >
                                   <i className="fa-solid fa-pen-to-square"></i> Edit Itinerary
                                 </Link>
@@ -2785,9 +2786,9 @@ export default function AdminDashboard() {
                                   type="button"
                                   onClick={() => setActiveTab('dispatch')}
                                   className="btn btn-secondary"
-                                  style={{ padding: '0.4rem 0.65rem', fontSize: '0.8rem', color: '#FBBF24', borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
+                                  style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem', color: '#FBBF24', borderColor: 'rgba(245,158,11,0.4)', background: 'rgba(245,158,11,0.08)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                                 >
-                                  <i className="fa-solid fa-car"></i> Fleet Assignment
+                                  <i className="fa-solid fa-car"></i> Fleet Assign
                                 </button>
                               </>
                             )}
@@ -2797,8 +2798,8 @@ export default function AdminDashboard() {
                                 href={`/admin/itinerary/${lead.id}`} 
                                 className="btn btn-secondary"
                                 style={{ 
-                                  padding: '0.4rem 0.6rem', 
-                                  fontSize: '0.8rem', 
+                                  padding: '0.35rem 0.55rem', 
+                                  fontSize: '0.75rem', 
                                   color: 'var(--text-secondary)', 
                                   display: 'inline-flex', 
                                   alignItems: 'center', 
@@ -2817,8 +2818,8 @@ export default function AdminDashboard() {
                                 rel="noopener noreferrer"
                                 className="btn btn-secondary"
                                 style={{ 
-                                  padding: '0.4rem 0.6rem', 
-                                  fontSize: '0.8rem', 
+                                  padding: '0.35rem 0.55rem', 
+                                  fontSize: '0.75rem', 
                                   color: '#38bdf8', 
                                   display: 'inline-flex', 
                                   alignItems: 'center', 
