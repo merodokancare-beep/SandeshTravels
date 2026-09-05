@@ -1157,6 +1157,50 @@ export default function AdminDashboard() {
     return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
   };
 
+  const getBookingConfirmationWhatsAppLink = (lead) => {
+    if (!lead || !lead.client_phone) return '#';
+    const cleanPhone = lead.client_phone.replace(/\D/g, '');
+    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.sandeshtravels.in');
+    
+    const itineraryLink = lead.itinerary_id 
+      ? `${baseDomain.replace(/\/$/, '')}/itinerary/${lead.itinerary_id}`
+      : `${baseDomain.replace(/\/$/, '')}/itinerary/${lead.id}`;
+    
+    const totalPrice = parseFloat(lead.itinerary_price) || 0;
+    const advancePaid = parseFloat(lead.advance_paid) || 0;
+    const balance = Math.max(0, totalPrice - advancePaid);
+    
+    const formattedStartDate = lead.start_date
+      ? new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : (lead.travel_dates || 'As Scheduled');
+
+    let msg = `*BOOKING CONFIRMED – Sandesh Travels* 🏔️✨\n\n`;
+    msg += `Dear *${lead.client_name}*,\n\n`;
+    msg += `Greetings from *Sandesh Travels*!\n`;
+    msg += `We are pleased to inform you that your *Advance Deposit of Rs. ${advancePaid > 0 ? advancePaid.toLocaleString('en-IN') : ''}* has been received & verified. Your tour booking is officially *CONFIRMED*! ✅\n\n`;
+    msg += `📋 *BOOKING SUMMARY:*\n`;
+    if (lead.itinerary_title || lead.package_name) {
+      msg += `• *Tour Package:* ${lead.itinerary_title || lead.package_name}\n`;
+    }
+    msg += `• *Tour Start Date:* ${formattedStartDate}\n`;
+    msg += `• *Guests:* ${lead.num_travelers || 1} Traveler(s)\n`;
+    if (totalPrice > 0) {
+      msg += `• *Total Package:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
+      msg += `• *Advance Received:* Rs. ${advancePaid.toLocaleString('en-IN')} (Verified ✅)\n`;
+      msg += `• *Remaining Balance:* Rs. ${balance.toLocaleString('en-IN')}\n`;
+    }
+    msg += `\n🚗 *FLEET & DRIVER ASSIGNMENT:*\n`;
+    msg += `Our operations team is currently finalizing your dedicated vehicle and driver allocations. Your driver details (Name, Contact Number & Vehicle Registration) will be updated on your live itinerary link shortly before your arrival.\n\n`;
+    msg += `🗺️ *VIEW LIVE ITINERARY & STAYS:*\n`;
+    msg += `👉 ${itineraryLink}\n\n`;
+    msg += `Thank you for choosing *Sandesh Travels*. We look forward to hosting you on an unforgettable journey! 🌄\n\n`;
+    msg += `Warm regards,\n*Sandesh Travels Team*`;
+
+    return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`;
+  };
+
   const isDriverFreeOnDate = (d, leadId, startDate, dayNumber) => {
     if (!startDate) return true;
     const targetDateStr = getIsoDateForDay(startDate, dayNumber);
@@ -1402,6 +1446,17 @@ export default function AdminDashboard() {
       if (res.ok) {
         setSuccess('Advance payment verified and booking confirmed! Driver assignment unlocked.');
         fetchDashboardData();
+        const targetLead = leads.find(l => String(l.id) === String(leadId));
+        if (targetLead) {
+          const waLink = getBookingConfirmationWhatsAppLink({
+            ...targetLead,
+            status: 'converted',
+            advance_paid: verifiedAmount || targetLead.advance_paid
+          });
+          if (waLink && waLink !== '#') {
+            window.open(waLink, '_blank');
+          }
+        }
       } else {
         setError(data.error || 'Failed to verify advance payment.');
       }
@@ -1437,6 +1492,17 @@ export default function AdminDashboard() {
       if (res.ok) {
         setSuccess('Manual advance recorded and booking confirmed!');
         fetchDashboardData();
+        const targetLead = leads.find(l => String(l.id) === String(leadId));
+        if (targetLead) {
+          const waLink = getBookingConfirmationWhatsAppLink({
+            ...targetLead,
+            status: 'converted',
+            advance_paid: parseFloat(amountStr)
+          });
+          if (waLink && waLink !== '#') {
+            window.open(waLink, '_blank');
+          }
+        }
       } else {
         setError(data.error || 'Failed to record advance payment.');
       }
@@ -2687,6 +2753,27 @@ export default function AdminDashboard() {
 
                             {lead.status === 'converted' && (
                               <>
+                                <a 
+                                  href={getBookingConfirmationWhatsAppLink(lead)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-secondary"
+                                  style={{ 
+                                    padding: '0.4rem 0.65rem', 
+                                    fontSize: '0.78rem', 
+                                    color: '#25D366', 
+                                    borderColor: 'rgba(37, 211, 102, 0.4)', 
+                                    background: 'rgba(37, 211, 102, 0.12)', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.35rem', 
+                                    whiteSpace: 'nowrap',
+                                    fontWeight: '600'
+                                  }}
+                                  title="Send Booking Confirmation & Advance Receipt to Client via WhatsApp"
+                                >
+                                  <i className="fa-brands fa-whatsapp fa-lg"></i> Send Confirmation
+                                </a>
                                 <Link 
                                   href={`/admin/itinerary/${lead.id}`} 
                                   className="btn btn-secondary"
