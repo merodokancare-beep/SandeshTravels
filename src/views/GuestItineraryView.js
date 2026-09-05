@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { ItineraryModel } from '@/models/Itinerary';
 import { LeadModel } from '@/models/Lead';
+import { CompanySettingsModel } from '@/models/CompanySettings';
 import { notFound } from 'next/navigation';
 import AcceptQuotationButton from '@/app/itinerary/[id]/AcceptButton';
 
@@ -53,7 +54,10 @@ export default async function GuestItinerary({ params }) {
     return notFound();
   }
 
-  // 3. Fetch Itinerary Days joined with Hotels and Drivers details
+  // 3. Fetch Company Profile & Payment Settings
+  const companySettings = await CompanySettingsModel.get();
+
+  // 4. Fetch Itinerary Days joined with Hotels and Drivers details
   const days = await ItineraryModel.getDaysWithDetails(itineraryId);
 
   return (
@@ -121,7 +125,17 @@ export default async function GuestItinerary({ params }) {
             </div>
             <div>
               <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block' }}>ITINERARY STATUS</span>
-              <span className={`badge badge-converted`} style={{ marginTop: '0.2rem' }}>Confirmed & Active</span>
+              {lead.status === 'converted' || lead.status === 'assigned' ? (
+                <span className="badge badge-converted" style={{ marginTop: '0.2rem' }}>Confirmed & Active</span>
+              ) : lead.payment_status === 'pending_verification' ? (
+                <span className="badge badge-quoted" style={{ marginTop: '0.2rem', background: 'rgba(245,158,11,0.15)', color: '#FBBF24' }}>Verification Pending</span>
+              ) : lead.status === 'completed' ? (
+                <span className="badge badge-completed" style={{ marginTop: '0.2rem' }}>Completed</span>
+              ) : lead.status === 'cancelled' ? (
+                <span className="badge badge-cancelled" style={{ marginTop: '0.2rem' }}>Cancelled</span>
+              ) : (
+                <span className="badge badge-new" style={{ marginTop: '0.2rem' }}>10% Advance Required</span>
+              )}
             </div>
           </div>
         </section>
@@ -243,17 +257,26 @@ export default async function GuestItinerary({ params }) {
           )}
         </section>
 
-        {/* Accept Quotation Panel */}
-        <AcceptQuotationButton itineraryId={itineraryId} initialStatus={lead.status} />
+        {/* Accept Quotation & 10% Advance Deposit Panel */}
+        <AcceptQuotationButton 
+          itineraryId={itineraryId} 
+          initialStatus={lead.status} 
+          initialPaymentStatus={lead.payment_status}
+          initialTransactionRef={lead.transaction_ref}
+          initialAdvancePaid={lead.advance_paid}
+          packagePrice={itinerary.price}
+          clientName={lead.client_name}
+          companySettings={companySettings}
+        />
 
         {/* Dynamic Help Section */}
         <section className="glass-card text-center" style={{ marginTop: '4rem', padding: '2rem' }}>
           <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem' }}>Need assistance during your trip?</h3>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1.5rem' }}>
-            Our operations center is active 24/7. Click below to chat with Sandesh Travels support instantly.
+            Our operations center is active 24/7. Click below to chat with {companySettings.company_name || 'Sandesh Travels'} support instantly.
           </p>
           <a 
-            href={`https://wa.me/919647878373?text=Hi%20Sandesh%20Travels,%20I%20have%20an%20inquiry%20regarding%20my%20itinerary%20(ID:%20${itineraryId})`}
+            href={`https://wa.me/${(companySettings.phone || '919647878373').replace(/\D/g, '')}?text=Hi%20${encodeURIComponent(companySettings.company_name || 'Sandesh Travels')},%20I%20have%20an%20inquiry%20regarding%20my%20itinerary%20(ID:%20${itineraryId})`}
             target="_blank" 
             rel="noopener noreferrer"
             className="btn btn-primary"

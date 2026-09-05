@@ -3,6 +3,7 @@ import { getAdminSession } from '@/lib/auth';
 import { LeadModel } from '@/models/Lead';
 import { ItineraryModel } from '@/models/Itinerary';
 import { PartnerModel } from '@/models/Partner';
+import { CompanySettingsModel } from '@/models/CompanySettings';
 
 export class InvoiceController {
   static async getInvoiceData(request, { params }) {
@@ -31,6 +32,8 @@ export class InvoiceController {
           { status: 404 }
         );
       }
+
+      const companySettings = await CompanySettingsModel.get();
 
       const itinerary = await ItineraryModel.getByLeadId(leadId);
       let days = [];
@@ -67,6 +70,9 @@ export class InvoiceController {
       const gstAmount = Math.round(basePrice * gstRate * 100) / 100;
       const totalAmount = Math.round((basePrice + gstAmount) * 100) / 100;
 
+      const advancePaid = lead.advance_paid ? parseFloat(lead.advance_paid) : (lead.status === 'converted' || lead.status === 'assigned' || lead.payment_status === 'advance_paid' ? Math.round(totalAmount * 0.10) : 0);
+      const balanceDue = lead.status === 'completed' ? 0 : Math.max(0, Math.round((totalAmount - advancePaid) * 100) / 100);
+
       return NextResponse.json({
         success: true,
         invoice: {
@@ -77,15 +83,15 @@ export class InvoiceController {
             year: 'numeric'
           }),
           agency: {
-            name: 'M/s Sandesh Travels',
-            tagline: 'Tours & Travel Company',
-            phone: '+91 9647878373',
-            email: 'santeshtravelsgtk@gmail.com',
-            website: 'www.sandeshtravels.in',
-            address: 'Chota Singtam, Near Kishan School, Aho Busty, Aho Yangtam GPU, Pakyong 737135',
-            license: 'TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282',
-            pan: 'AXXPR3863J',
-            gstin: 'AXXPR3863J'
+            name: companySettings.company_name || 'M/s Sandesh Travels',
+            tagline: companySettings.tagline || 'Tours & Travel Company',
+            phone: companySettings.phone || '+91 9647878373',
+            email: companySettings.email || 'santeshtravelsgtk@gmail.com',
+            website: companySettings.website || 'www.sandeshtravels.in',
+            address: companySettings.address || 'Chota Singtam, Near Kishan School, Aho Busty, Aho Yangtam GPU, Pakyong 737135',
+            license: companySettings.license || 'TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282',
+            pan: companySettings.pan || 'AXXPR3863J',
+            gstin: companySettings.gstin || 'AXXPR3863J'
           },
           client: {
             name: lead.client_name,
@@ -113,7 +119,11 @@ export class InvoiceController {
             gstAmount,
             discount: 0,
             totalAmount,
-            paymentStatus: lead.status === 'completed' ? 'PAID & COMPLETED' : 'BOOKING CONFIRMED'
+            advancePaid,
+            balanceDue,
+            paymentStatus: lead.status === 'completed' ? 'PAID & COMPLETED' : (advancePaid > 0 || lead.status === 'converted' || lead.status === 'assigned') ? '10% ADVANCE RECEIVED' : 'ADVANCE DUE',
+            transactionRef: lead.transaction_ref,
+            paymentMethod: lead.payment_method || 'UPI'
           }
         }
       });

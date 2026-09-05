@@ -163,6 +163,14 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS attended_by INT REFERENCES admins(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS attended_by_name VARCHAR(100),
       ADD COLUMN IF NOT EXISTS attended_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS advance_amount NUMERIC(10,2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS advance_paid NUMERIC(10,2) DEFAULT 0.00,
+      ADD COLUMN IF NOT EXISTS payment_status VARCHAR(30) DEFAULT 'unpaid',
+      ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS transaction_ref VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS advance_submitted_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS advance_verified_at TIMESTAMP,
+      ADD COLUMN IF NOT EXISTS advance_verified_by INT REFERENCES admins(id) ON DELETE SET NULL,
       ALTER COLUMN travel_dates TYPE TEXT,
       ALTER COLUMN client_phone TYPE VARCHAR(100),
       ALTER COLUMN client_name TYPE VARCHAR(255);
@@ -305,14 +313,58 @@ export async function initDb() {
       console.log('Seeded default partner hotel.');
     }
 
-    const adminsCount = await client.query('SELECT COUNT(*) FROM admins');
-    if (parseInt(adminsCount.rows[0].count, 10) === 0) {
-      const hashedAdminPassword = await bcrypt.hash('admin123', 10);
+    // 9. Company Profile & Banking Settings
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS company_settings (
+        id SERIAL PRIMARY KEY,
+        company_name VARCHAR(150) DEFAULT 'M/s Sandesh Travels',
+        tagline VARCHAR(150) DEFAULT 'Tours & Travel Company',
+        phone VARCHAR(50) DEFAULT '+91 9647878373',
+        email VARCHAR(100) DEFAULT 'santeshtravelsgtk@gmail.com',
+        website VARCHAR(100) DEFAULT 'www.sandeshtravels.in',
+        address TEXT DEFAULT 'Chota Singtam, Near Kishan School, Aho Busty, Aho Yangtam GPU, Pakyong 737135',
+        pan VARCHAR(50) DEFAULT 'AXXPR3863J',
+        gstin VARCHAR(50) DEFAULT 'AXXPR3863J',
+        license TEXT DEFAULT 'TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282',
+        upi_id VARCHAR(100) DEFAULT '9647878373@upi',
+        upi_payee_name VARCHAR(150) DEFAULT 'Sandesh Travels',
+        advance_percentage INT DEFAULT 10,
+        bank_account_name VARCHAR(150) DEFAULT 'M/s Sandesh Travels',
+        bank_name VARCHAR(100) DEFAULT 'State Bank of India',
+        bank_branch VARCHAR(100) DEFAULT 'Pakyong / Gangtok Branch',
+        bank_account_number VARCHAR(50) DEFAULT '412309876543',
+        bank_ifsc VARCHAR(50) DEFAULT 'SBIN0001234',
+        bank_account_type VARCHAR(50) DEFAULT 'Current Account',
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    const settingsCount = await client.query('SELECT COUNT(*) FROM company_settings');
+    if (parseInt(settingsCount.rows[0].count, 10) === 0) {
       await client.query(`
-        INSERT INTO admins (username, password, name)
-        VALUES ('admin', $1, 'Sandesh Travels Owner')
-      `, [hashedAdminPassword]);
-      console.log('Seeded default admin owner.');
+        INSERT INTO company_settings (company_name, tagline, phone, email, website, address, pan, gstin, license, upi_id, upi_payee_name, advance_percentage, bank_account_name, bank_name, bank_branch, bank_account_number, bank_ifsc, bank_account_type)
+        VALUES (
+          'M/s Sandesh Travels',
+          'Tours & Travel Company',
+          '+91 9647878373',
+          'santeshtravelsgtk@gmail.com',
+          'www.sandeshtravels.in',
+          'Chota Singtam, Near Kishan School, Aho Busty, Aho Yangtam GPU, Pakyong 737135',
+          'AXXPR3863J',
+          'AXXPR3863J',
+          'TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282',
+          '9647878373@upi',
+          'Sandesh Travels',
+          10,
+          'M/s Sandesh Travels',
+          'State Bank of India',
+          'Pakyong / Gangtok Branch',
+          '412309876543',
+          'SBIN0001234',
+          'Current Account'
+        );
+      `);
+      console.log('Seeded default company settings.');
     }
 
     await client.query('COMMIT');

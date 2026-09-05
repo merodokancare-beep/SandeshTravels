@@ -680,7 +680,10 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
   const getWhatsAppMessageText = () => {
     if (!lead || !itineraryId) return '';
-    const guestItineraryUrl = `${window.location.origin}/itinerary/${itineraryId}`;
+    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.sandeshtravels.in');
+    const guestItineraryUrl = `${baseDomain.replace(/\/$/, '')}/itinerary/${itineraryId}`;
     const assignedDay = days.find(d => d.driverId) || {};
     const driver = drivers.find(drv => String(drv.id) === String(assignedDay.driverId));
     const hasDriver = !!driver;

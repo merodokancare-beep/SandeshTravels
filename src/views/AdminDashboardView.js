@@ -141,12 +141,33 @@ export default function AdminDashboard() {
   const [fleetStartDates, setFleetStartDates] = useState({});
   const [calendarStartDate, setCalendarStartDate] = useState(getTodayDateString());
   const [bookModalTemplateRegion, setBookModalTemplateRegion] = useState('All');
-  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports', 'users'
+  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports', 'users', 'settings'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [toasts, setToasts] = useState([]);
+
+  // Company Profile & Payment Settings states
+  const [companySettings, setCompanySettings] = useState(null);
+  const [settingsCompanyName, setSettingsCompanyName] = useState('');
+  const [settingsTagline, setSettingsTagline] = useState('');
+  const [settingsPhone, setSettingsPhone] = useState('');
+  const [settingsEmail, setSettingsEmail] = useState('');
+  const [settingsWebsite, setSettingsWebsite] = useState('');
+  const [settingsAddress, setSettingsAddress] = useState('');
+  const [settingsPan, setSettingsPan] = useState('');
+  const [settingsGstin, setSettingsGstin] = useState('');
+  const [settingsLicense, setSettingsLicense] = useState('');
+  const [settingsUpiId, setSettingsUpiId] = useState('');
+  const [settingsUpiPayeeName, setSettingsUpiPayeeName] = useState('');
+  const [settingsAdvancePercentage, setSettingsAdvancePercentage] = useState(10);
+  const [settingsBankAccountName, setSettingsBankAccountName] = useState('');
+  const [settingsBankName, setSettingsBankName] = useState('');
+  const [settingsBankBranch, setSettingsBankBranch] = useState('');
+  const [settingsBankAccountNumber, setSettingsBankAccountNumber] = useState('');
+  const [settingsBankIfsc, setSettingsBankIfsc] = useState('');
+  const [settingsBankAccountType, setSettingsBankAccountType] = useState('Current Account');
 
   // Staff & Role-Based Access Control states
   const [staffUsers, setStaffUsers] = useState([]);
@@ -176,7 +197,8 @@ export default function AdminDashboard() {
     { key: 'partners', label: 'Partners Master', icon: 'fa-handshake', desc: 'B2B referral hotels and commission rates' },
     { key: 'drivers', label: 'Drivers Registry', icon: 'fa-id-card', desc: 'Driver contact and vehicle ownership directory' },
     { key: 'templates', label: 'Itinerary Master', icon: 'fa-compass', desc: 'Pre-defined regional travel templates' },
-    { key: 'reports', label: 'Reports & Analytics', icon: 'fa-chart-pie', desc: 'Revenue, driver tours, and employee performance' }
+    { key: 'reports', label: 'Reports & Analytics', icon: 'fa-chart-pie', desc: 'Revenue, driver tours, and employee performance' },
+    { key: 'settings', label: 'Company & Banking', icon: 'fa-building-circle-gear', desc: 'Agency profile, UPI ID, and bank account settings' }
   ];
 
   const getModuleInfo = (mKey) => {
@@ -988,6 +1010,34 @@ export default function AdminDashboard() {
           setStaffUsers(usersData.users || []);
         }
       }
+
+      // 9. Fetch Company Profile & Banking/UPI Settings
+      const setRes = await fetch('/api/admin/settings');
+      if (setRes.ok) {
+        const setData = await setRes.json();
+        if (setData.settings) {
+          const s = setData.settings;
+          setCompanySettings(s);
+          setSettingsCompanyName(s.company_name || '');
+          setSettingsTagline(s.tagline || '');
+          setSettingsPhone(s.phone || '');
+          setSettingsEmail(s.email || '');
+          setSettingsWebsite(s.website || '');
+          setSettingsAddress(s.address || '');
+          setSettingsPan(s.pan || '');
+          setSettingsGstin(s.gstin || '');
+          setSettingsLicense(s.license || '');
+          setSettingsUpiId(s.upi_id || '');
+          setSettingsUpiPayeeName(s.upi_payee_name || '');
+          setSettingsAdvancePercentage(s.advance_percentage || 10);
+          setSettingsBankAccountName(s.bank_account_name || '');
+          setSettingsBankName(s.bank_name || '');
+          setSettingsBankBranch(s.bank_branch || '');
+          setSettingsBankAccountNumber(s.bank_account_number || '');
+          setSettingsBankIfsc(s.bank_ifsc || '');
+          setSettingsBankAccountType(s.bank_account_type || 'Current Account');
+        }
+      }
     } catch (err) {
       console.error('Fetch admin dashboard error:', err);
       setError('Could not load portal data. Check database settings.');
@@ -1079,7 +1129,10 @@ export default function AdminDashboard() {
 
   const getReceiptWhatsAppLink = (j) => {
     if (!j.lead || !j.itinerary) return '#';
-    const guestItineraryUrl = `${window.location.origin}/itinerary/${j.itinerary.id}`;
+    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.sandeshtravels.in');
+    const guestItineraryUrl = `${baseDomain.replace(/\/$/, '')}/itinerary/${j.itinerary.id}`;
     
     // Find the first assigned driver details in the itinerary days
     const assignedDayWithDriver = j.days.find(d => d.driver_name) || {};
@@ -1330,6 +1383,111 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error(err);
       setError('Failed to execute update.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleVerifyAdvance = async (leadId, verifiedAmount = null) => {
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads/verify-advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId, verifiedAmount })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess('Advance payment verified and booking confirmed! Driver assignment unlocked.');
+        fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to verify advance payment.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while verifying advance payment.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleRecordManualAdvance = async (leadId) => {
+    const amountStr = prompt('Enter advance amount received (₹):');
+    if (!amountStr || isNaN(parseFloat(amountStr))) return;
+    const paymentMethod = prompt('Payment mode (cash, bank_transfer, upi_qr):', 'cash') || 'cash';
+    const transactionRef = prompt('Reference / Notes:', 'MANUAL_CASH') || 'MANUAL_CASH';
+
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads/manual-advance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          amount: parseFloat(amountStr),
+          paymentMethod,
+          transactionRef
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess('Manual advance recorded and booking confirmed!');
+        fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to record advance payment.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while recording advance.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSaveCompanySettings = async (e) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          companyName: settingsCompanyName,
+          tagline: settingsTagline,
+          phone: settingsPhone,
+          email: settingsEmail,
+          website: settingsWebsite,
+          address: settingsAddress,
+          pan: settingsPan,
+          gstin: settingsGstin,
+          license: settingsLicense,
+          upiId: settingsUpiId,
+          upiPayeeName: settingsUpiPayeeName,
+          advancePercentage: settingsAdvancePercentage,
+          bankAccountName: settingsBankAccountName,
+          bankName: settingsBankName,
+          bankBranch: settingsBankBranch,
+          bankAccountNumber: settingsBankAccountNumber,
+          bankIfsc: settingsBankIfsc,
+          bankAccountType: settingsBankAccountType
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess('Company Profile, UPI ID & Banking settings saved successfully!');
+        if (data.settings) setCompanySettings(data.settings);
+      } else {
+        setError(data.error || 'Failed to save company settings.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while saving company settings.');
     } finally {
       setActionLoading(false);
     }
@@ -1992,6 +2150,15 @@ export default function AdminDashboard() {
                 <i className="fa-solid fa-users-gear" style={{ color: 'var(--secondary)' }}></i> Team & Roles
               </button>
             )}
+            {admin?.role === 'admin' && (
+              <button 
+                onClick={() => setActiveTab('settings')} 
+                className={`nav-link ${activeTab === 'settings' ? 'active' : ''}`}
+                style={{ border: 'none', background: 'none', width: '100%', textAlign: 'left' }}
+              >
+                <i className="fa-solid fa-building-circle-gear" style={{ color: '#38bdf8' }}></i> Company & Banking
+              </button>
+            )}
           </nav>
         </div>
         <div>
@@ -2417,6 +2584,37 @@ export default function AdminDashboard() {
                                 </select>
                               )}
                             </div>
+
+                            {/* Advance Deposit Status Tracking */}
+                            {lead.payment_status === 'pending_verification' ? (
+                              <div style={{
+                                background: 'rgba(245,158,11,0.15)',
+                                border: '1px solid rgba(251,191,36,0.3)',
+                                borderRadius: '4px',
+                                padding: '0.25rem 0.5rem',
+                                fontSize: '0.75rem',
+                                color: '#FBBF24',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '2px'
+                              }}>
+                                <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <i className="fa-solid fa-clock-rotate-left"></i> Advance Submitted: ₹{lead.advance_paid}
+                                </div>
+                                <div style={{ fontSize: '0.7rem', color: '#FFF' }}>
+                                  UTR: <code>{lead.transaction_ref}</code>
+                                </div>
+                              </div>
+                            ) : lead.payment_status === 'advance_paid' || lead.status === 'converted' || lead.status === 'assigned' ? (
+                              <div style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <i className="fa-solid fa-shield-check"></i> 10% Advance Paid {lead.advance_paid ? `(₹${lead.advance_paid})` : ''}
+                              </div>
+                            ) : lead.itinerary_price > 0 ? (
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                                10% Required: ₹{Math.round(lead.itinerary_price * 0.1)}
+                              </div>
+                            ) : null}
+
                             {lead.status === 'converted' && (
                               <div style={{ fontSize: '0.75rem', color: '#FBBF24', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                                 <i className="fa-solid fa-clock"></i> Pending Fleet Assignment
@@ -2431,6 +2629,31 @@ export default function AdminDashboard() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+                            {lead.payment_status === 'pending_verification' && (
+                              <button
+                                type="button"
+                                onClick={() => handleVerifyAdvance(lead.id, lead.advance_paid)}
+                                disabled={actionLoading}
+                                className="btn"
+                                style={{
+                                  padding: '0.4rem 0.75rem',
+                                  fontSize: '0.78rem',
+                                  background: 'linear-gradient(135deg, #10B981, #059669)',
+                                  color: '#FFF',
+                                  fontWeight: '700',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.35rem',
+                                  boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                                }}
+                                title="Verify 10% advance deposit and confirm booking"
+                              >
+                                <i className="fa-solid fa-check-double"></i> Verify Advance (₹{lead.advance_paid})
+                              </button>
+                            )}
+
                             {(lead.status === 'new' || lead.status === 'quoted') && (
                               <Link 
                                 href={`/admin/itinerary/${lead.id}`} 
@@ -2447,6 +2670,19 @@ export default function AdminDashboard() {
                               >
                                 <i className="fa-solid fa-wand-magic-sparkles"></i> Build Itinerary
                               </Link>
+                            )}
+
+                            {lead.status === 'quoted' && lead.payment_status !== 'pending_verification' && lead.payment_status !== 'advance_paid' && (
+                              <button
+                                type="button"
+                                onClick={() => handleRecordManualAdvance(lead.id)}
+                                disabled={actionLoading}
+                                className="btn btn-outline"
+                                style={{ padding: '0.4rem 0.65rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
+                                title="Record manual cash or offline bank advance"
+                              >
+                                <i className="fa-solid fa-hand-holding-dollar"></i> Log Advance
+                              </button>
                             )}
 
                             {lead.status === 'converted' && (
@@ -4961,6 +5197,316 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+          </section>
+        )}
+
+        {/* ── Tab: Company Profile & Payment / Banking Settings ────────────────────────────── */}
+        {activeTab === 'settings' && (
+          <section className="animate-fade-in" style={{ paddingBottom: '3rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                  <i className="fa-solid fa-building-circle-gear" style={{ color: '#38bdf8' }}></i>
+                  Company Profile & Payment / Banking Settings
+                </h2>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+                  Configure your primary UPI ID for guest QR code payments, advance deposit %, bank transfer details, and invoice agency profile.
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveCompanySettings} style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: '1.5rem' }}>
+                
+                {/* 💳 Left Box: UPI & Bank Account Details */}
+                <div className="glass-card" style={{ padding: '1.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--border-radius-lg)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(56,189,248,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8' }}>
+                      <i className="fa-solid fa-qrcode"></i>
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#FFF' }}>UPI & Banking Configuration</h3>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Powers dynamic QR code and NEFT/IMPS instructions on guest links</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>Primary UPI ID / VPA *</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. 9647878373@upi or sandeshtravels@sbi"
+                          value={settingsUpiId}
+                          onChange={(e) => setSettingsUpiId(e.target.value)}
+                          required
+                        />
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                          Embedded into dynamic QR code for instant UPI apps
+                        </span>
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>UPI Payee Display Name *</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Sandesh Travels"
+                          value={settingsUpiPayeeName}
+                          onChange={(e) => setSettingsUpiPayeeName(e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Advance Deposit Required (%) *</label>
+                      <input
+                        type="number"
+                        className="form-control"
+                        min="1"
+                        max="100"
+                        value={settingsAdvancePercentage}
+                        onChange={(e) => setSettingsAdvancePercentage(parseInt(e.target.value, 10) || 10)}
+                        required
+                      />
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                        Default is 10%. Used to calculate the mandatory advance amount to confirm itineraries.
+                      </span>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '1rem', marginTop: '0.5rem' }}>
+                      <h4 style={{ fontSize: '0.95rem', color: 'var(--accent-teal)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <i className="fa-solid fa-building-columns"></i> Bank Account for Direct Transfers
+                      </h4>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label>Bank Account Holder Name</label>
+                          <input
+                            type="text"
+                            className="form-control"
+                            placeholder="e.g. M/s Sandesh Travels"
+                            value={settingsBankAccountName}
+                            onChange={(e) => setSettingsBankAccountName(e.target.value)}
+                          />
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label>Bank Name</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="e.g. State Bank of India"
+                              value={settingsBankName}
+                              onChange={(e) => setSettingsBankName(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label>Branch Name</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="e.g. Pakyong / Gangtok Branch"
+                              value={settingsBankBranch}
+                              onChange={(e) => setSettingsBankBranch(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label>Account Number</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="e.g. 412309876543"
+                              value={settingsBankAccountNumber}
+                              onChange={(e) => setSettingsBankAccountNumber(e.target.value)}
+                            />
+                          </div>
+
+                          <div className="form-group" style={{ margin: 0 }}>
+                            <label>IFSC Code</label>
+                            <input
+                              type="text"
+                              className="form-control"
+                              placeholder="e.g. SBIN0001234"
+                              value={settingsBankIfsc}
+                              onChange={(e) => setSettingsBankIfsc(e.target.value)}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="form-group" style={{ margin: 0 }}>
+                          <label>Account Type</label>
+                          <select
+                            className="form-control"
+                            value={settingsBankAccountType}
+                            onChange={(e) => setSettingsBankAccountType(e.target.value)}
+                            style={{ background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                          >
+                            <option value="Current Account">Current Account</option>
+                            <option value="Savings Account">Savings Account</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 🏢 Right Box: Official Company & Invoice Profile */}
+                <div className="glass-card" style={{ padding: '1.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--border-radius-lg)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem', marginBottom: '1.25rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(168,85,247,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c084fc' }}>
+                      <i className="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div>
+                      <h3 style={{ fontSize: '1.1rem', margin: 0, color: '#FFF' }}>Company Profile & Invoicing</h3>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Displayed on official Tax Invoices, Receipts & Footer</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>Company Legal Name *</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. M/s Sandesh Travels"
+                          value={settingsCompanyName}
+                          onChange={(e) => setSettingsCompanyName(e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>Tagline / Subtitle</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Tours & Travel Company"
+                          value={settingsTagline}
+                          onChange={(e) => setSettingsTagline(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>Official Phone *</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. +91 9647878373"
+                          value={settingsPhone}
+                          onChange={(e) => setSettingsPhone(e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>Official Email</label>
+                        <input
+                          type="email"
+                          className="form-control"
+                          placeholder="e.g. santeshtravelsgtk@gmail.com"
+                          value={settingsEmail}
+                          onChange={(e) => setSettingsEmail(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Website URL</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. www.sandeshtravels.in"
+                        value={settingsWebsite}
+                        onChange={(e) => setSettingsWebsite(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Full Business Address</label>
+                      <textarea
+                        className="form-control"
+                        rows={2}
+                        placeholder="e.g. Chota Singtam, Near Kishan School, Aho Busty, Pakyong 737135"
+                        value={settingsAddress}
+                        onChange={(e) => setSettingsAddress(e.target.value)}
+                      />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>PAN Number</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. AXXPR3863J"
+                          value={settingsPan}
+                          onChange={(e) => setSettingsPan(e.target.value)}
+                        />
+                      </div>
+
+                      <div className="form-group" style={{ margin: 0 }}>
+                        <label>GSTIN</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. AXXPR3863J"
+                          value={settingsGstin}
+                          onChange={(e) => setSettingsGstin(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="form-group" style={{ margin: 0 }}>
+                      <label>Tourism License / Registration Details</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. TTD:1667/DoT &CAv/Gtk/24/TA | TL: EOG/AHY/0282"
+                        value={settingsLicense}
+                        onChange={(e) => setSettingsLicense(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              <div style={{ textAlign: 'right', marginTop: '1rem' }}>
+                <button
+                  type="submit"
+                  disabled={actionLoading}
+                  className="btn btn-primary"
+                  style={{
+                    padding: '0.85rem 2.5rem',
+                    fontSize: '1rem',
+                    fontWeight: 700,
+                    background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+                    boxShadow: 'var(--shadow-glow)'
+                  }}
+                >
+                  {actionLoading ? (
+                    <>
+                      <i className="fa-solid fa-spinner fa-spin" style={{ marginRight: '0.5rem' }}></i> Saving Settings...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fa-solid fa-floppy-disk" style={{ marginRight: '0.5rem' }}></i> Save & Sync Company Profile
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
           </section>
         )}
       </main>

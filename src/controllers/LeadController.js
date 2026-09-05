@@ -411,6 +411,164 @@ export class LeadController {
     }
   }
 
+  static async guestSubmitAdvance(request) {
+    try {
+      const { itineraryId, transactionRef, amount, paymentMethod = 'upi_qr' } = await request.json();
+
+      if (!itineraryId) {
+        return NextResponse.json(
+          { error: 'Itinerary ID is required.' },
+          { status: 400 }
+        );
+      }
+
+      if (!transactionRef || !transactionRef.trim()) {
+        return NextResponse.json(
+          { error: 'Transaction Reference / UTR Number is required to confirm advance payment.' },
+          { status: 400 }
+        );
+      }
+
+      const itinerary = await ItineraryModel.getById(parseInt(itineraryId, 10));
+      if (!itinerary) {
+        return NextResponse.json(
+          { error: 'Itinerary not found.' },
+          { status: 404 }
+        );
+      }
+
+      const packagePrice = parseFloat(itinerary.price) || 0;
+      const minAdvance = Math.round(packagePrice * 0.10); // 10% minimum
+      const paidAmount = amount ? parseFloat(amount) : minAdvance;
+
+      const leadId = itinerary.lead_id;
+
+      // Update lead with payment details & set status to pending_verification
+      const updatedLead = await LeadModel.update(leadId, {
+        advanceAmount: minAdvance,
+        advancePaid: paidAmount,
+        transactionRef: transactionRef.trim(),
+        paymentMethod,
+        paymentStatus: 'pending_verification',
+        advanceSubmittedAt: new Date()
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Advance payment details submitted successfully! Our team is verifying your payment to confirm your booking.',
+        lead: updatedLead,
+        minAdvance,
+        paidAmount
+      });
+    } catch (error) {
+      console.error('LeadController guestSubmitAdvance error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error while submitting advance payment.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  static async adminVerifyAdvance(request) {
+    try {
+      const session = await getAdminSession();
+      if (!session) {
+        return NextResponse.json(
+          { error: 'Unauthorized. Please log in as admin.' },
+          { status: 401 }
+        );
+      }
+
+      const { leadId, verifiedAmount } = await request.json();
+
+      if (!leadId) {
+        return NextResponse.json(
+          { error: 'Lead ID is required.' },
+          { status: 400 }
+        );
+      }
+
+      const lead = await LeadModel.getById(leadId);
+      if (!lead) {
+        return NextResponse.json(
+          { error: 'Lead not found.' },
+          { status: 404 }
+        );
+      }
+
+      const itinerary = await ItineraryModel.getByLeadId(leadId);
+      if (itinerary) {
+        // Unassign conflicting drivers
+        await ItineraryModel.unassignConflictingDrivers(itinerary.id, leadId);
+      }
+
+      // Mark advance verified and lead converted
+      const updatedLead = await LeadModel.verifyAdvancePayment(leadId, session.userId, {
+        verifiedAmount: verifiedAmount ? parseFloat(verifiedAmount) : null
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Advance payment verified! Booking is now confirmed & lead is converted.',
+        lead: updatedLead
+      });
+    } catch (error) {
+      console.error('LeadController adminVerifyAdvance error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error while verifying advance payment.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  static async adminRecordManualAdvance(request) {
+    try {
+      const session = await getAdminSession();
+      if (!session) {
+        return NextResponse.json(
+          { error: 'Unauthorized. Please log in as admin.' },
+          { status: 401 }
+        );
+      }
+
+      const { leadId, amount, paymentMethod = 'cash', transactionRef = 'MANUAL' } = await request.json();
+
+      if (!leadId || !amount) {
+        return NextResponse.json(
+          { error: 'Lead ID and payment amount are required.' },
+          { status: 400 }
+        );
+      }
+
+      const itinerary = await ItineraryModel.getByLeadId(leadId);
+      if (itinerary) {
+        await ItineraryModel.unassignConflictingDrivers(itinerary.id, leadId);
+      }
+
+      const updatedLead = await LeadModel.update(leadId, {
+        status: 'converted',
+        advancePaid: parseFloat(amount),
+        paymentStatus: 'advance_paid',
+        paymentMethod,
+        transactionRef,
+        advanceVerifiedAt: new Date(),
+        advanceVerifiedBy: session.userId
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Advance payment recorded and lead converted successfully.',
+        lead: updatedLead
+      });
+    } catch (error) {
+      console.error('LeadController adminRecordManualAdvance error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error while recording advance payment.' },
+        { status: 500 }
+      );
+    }
+  }
+
   static async guestAcceptItinerary(request) {
     try {
       const { itineraryId } = await request.json();
@@ -452,3 +610,4 @@ export class LeadController {
     }
   }
 }
+

@@ -42,15 +42,15 @@ export class LeadModel {
     return res.rows;
   }
 
-  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null }, client = null) {
+  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const determinedSource = source || (partnerId ? 'partner' : 'direct');
     const finalAttendedAt = attendedBy && !attendedAt ? new Date() : attendedAt;
     const res = await q(
-      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes, attended_by, attended_by_name, attended_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes, attended_by, attended_by_name, attended_at, advance_amount, advance_paid, payment_status, payment_method, transaction_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
        RETURNING *`,
-      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes, attendedBy, attendedByName, finalAttendedAt]
+      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes, attendedBy, attendedByName, finalAttendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef]
     );
     return res.rows[0];
   }
@@ -61,7 +61,7 @@ export class LeadModel {
     const values = [];
     let idx = 1;
 
-    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes, attendedBy, attendedByName, attendedAt } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy } = fields;
 
     if (clientName !== undefined) {
       updates.push(`client_name = $${idx++}`);
@@ -118,6 +118,38 @@ export class LeadModel {
       updates.push(`attended_at = $${idx++}`);
       values.push(attendedAt);
     }
+    if (advanceAmount !== undefined) {
+      updates.push(`advance_amount = $${idx++}`);
+      values.push(advanceAmount);
+    }
+    if (advancePaid !== undefined) {
+      updates.push(`advance_paid = $${idx++}`);
+      values.push(advancePaid);
+    }
+    if (paymentStatus !== undefined) {
+      updates.push(`payment_status = $${idx++}`);
+      values.push(paymentStatus);
+    }
+    if (paymentMethod !== undefined) {
+      updates.push(`payment_method = $${idx++}`);
+      values.push(paymentMethod);
+    }
+    if (transactionRef !== undefined) {
+      updates.push(`transaction_ref = $${idx++}`);
+      values.push(transactionRef);
+    }
+    if (advanceSubmittedAt !== undefined) {
+      updates.push(`advance_submitted_at = $${idx++}`);
+      values.push(advanceSubmittedAt);
+    }
+    if (advanceVerifiedAt !== undefined) {
+      updates.push(`advance_verified_at = $${idx++}`);
+      values.push(advanceVerifiedAt);
+    }
+    if (advanceVerifiedBy !== undefined) {
+      updates.push(`advance_verified_by = $${idx++}`);
+      values.push(advanceVerifiedBy);
+    }
 
     if (updates.length === 0) {
       throw new Error('No fields provided to update lead');
@@ -132,6 +164,37 @@ export class LeadModel {
       values
     );
 
+    return res.rows[0] || null;
+  }
+
+  static async submitAdvancePayment(leadId, { amount, transactionRef, paymentMethod = 'upi_qr' }) {
+    const res = await query(
+      `UPDATE leads
+       SET advance_paid = $1,
+           transaction_ref = $2,
+           payment_method = $3,
+           payment_status = 'pending_verification',
+           advance_submitted_at = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING *`,
+      [amount, transactionRef, paymentMethod, leadId]
+    );
+    return res.rows[0] || null;
+  }
+
+  static async verifyAdvancePayment(leadId, adminId, { verifiedAmount = null } = {}) {
+    const res = await query(
+      `UPDATE leads
+       SET status = 'converted',
+           payment_status = 'advance_paid',
+           converted_at = CURRENT_DATE,
+           advance_verified_at = CURRENT_TIMESTAMP,
+           advance_verified_by = $1,
+           advance_paid = COALESCE($2, advance_paid)
+       WHERE id = $3
+       RETURNING *`,
+      [adminId, verifiedAmount, leadId]
+    );
     return res.rows[0] || null;
   }
 

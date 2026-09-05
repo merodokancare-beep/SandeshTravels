@@ -228,8 +228,8 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '2rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '1.75rem', marginBottom: '2rem' }}>
           <div style={{ flex: '1 1 540px', maxWidth: '540px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.75rem' }}>
-              <div style={{ background: '#0f172a', padding: '6px 12px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.1)', flexShrink: 0 }}>
-                <img src="/logo.png" alt="Sandesh Travels" style={{ height: '48px', objectFit: 'contain' }} />
+              <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', padding: '4px 8px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', flexShrink: 0 }}>
+                <img src="/logo.png" alt="Sandesh Travels" style={{ height: '52px', objectFit: 'contain' }} />
               </div>
               <div>
                 <h1 style={{ margin: 0, fontSize: '1.75rem', fontWeight: '800', color: '#0f172a', letterSpacing: '-0.02em' }}>{invoice.agency.name || 'M/s Sandesh Travels'}</h1>
@@ -436,6 +436,24 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
+              borderTop: '1px solid #cbd5e1',
+              paddingTop: '0.6rem',
+              marginBottom: '0.6rem',
+              color: '#0f172a'
+            }}>
+              <span style={{ fontWeight: '700' }}>Total Package Cost:</span>
+              <strong style={{ fontSize: '1.1rem', fontWeight: '800' }}>₹{computedTotal.toLocaleString('en-IN')}</strong>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#15803d' }}>
+              <span>10% Advance Paid {invoice.billing?.transactionRef ? `(UTR: ${invoice.billing.transactionRef})` : ''}:</span>
+              <strong>₹{(invoice.billing?.advancePaid || Math.round(computedTotal * 0.1)).toLocaleString('en-IN')}</strong>
+            </div>
+
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
               background: '#0f172a',
               color: '#ffffff',
               padding: '0.85rem 1rem',
@@ -443,8 +461,10 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               marginTop: '0.8rem',
               fontSize: '1.1rem'
             }}>
-              <span style={{ fontWeight: '700' }}>Total Amount Paid:</span>
-              <strong style={{ color: '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>₹{computedTotal.toLocaleString('en-IN')}</strong>
+              <span style={{ fontWeight: '700' }}>Balance Due on Arrival:</span>
+              <strong style={{ color: '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>
+                ₹{(invoice.client.status === 'completed' ? 0 : Math.max(0, computedTotal - (invoice.billing?.advancePaid || Math.round(computedTotal * 0.1)))).toLocaleString('en-IN')}
+              </strong>
             </div>
           </div>
         </div>
