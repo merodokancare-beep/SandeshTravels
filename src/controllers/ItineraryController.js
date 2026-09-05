@@ -116,6 +116,16 @@ export class ItineraryController {
         }
       }
 
+      // Auto-assign lead to current admin user if it is currently open/unassigned
+      const currentLead = await LeadModel.getById(parseInt(leadId, 10), client);
+      if (currentLead && !currentLead.attended_by && session?.adminId) {
+        await LeadModel.update(currentLead.id, {
+          attendedBy: session.adminId,
+          attendedByName: session.name,
+          attendedAt: new Date()
+        }, client);
+      }
+
       const leadObj = await LeadModel.getById(parseInt(leadId, 10), client);
       const isConvertedLead = leadObj && (leadObj.status === 'converted' || leadObj.status === 'assigned' || leadObj.status === 'completed');
 

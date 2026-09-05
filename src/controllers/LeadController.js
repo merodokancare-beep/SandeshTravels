@@ -503,9 +503,14 @@ export class LeadController {
       }
 
       // Mark advance verified and lead converted
-      const updatedLead = await LeadModel.verifyAdvancePayment(leadId, session.userId, {
+      const updatedLead = await LeadModel.verifyAdvancePayment(leadId, session.userId || session.adminId, {
         verifiedAmount: verifiedAmount ? parseFloat(verifiedAmount) : null
       });
+
+      // Auto-assign lead to verifying admin if currently unassigned
+      if (!lead.attended_by && (session.adminId || session.userId)) {
+        await LeadModel.pickupLead(leadId, session.adminId || session.userId, session.name || 'Admin');
+      }
 
       return NextResponse.json({
         success: true,
@@ -540,6 +545,8 @@ export class LeadController {
         );
       }
 
+      const existingLead = await LeadModel.getById(leadId);
+
       const itinerary = await ItineraryModel.getByLeadId(leadId);
       if (itinerary) {
         await ItineraryModel.unassignConflictingDrivers(itinerary.id, leadId);
@@ -552,7 +559,12 @@ export class LeadController {
         paymentMethod,
         transactionRef,
         advanceVerifiedAt: new Date(),
-        advanceVerifiedBy: session.userId
+        advanceVerifiedBy: session.userId || session.adminId,
+        ...(existingLead && !existingLead.attended_by ? {
+          attendedBy: session.adminId || session.userId,
+          attendedByName: session.name || 'Admin',
+          attendedAt: new Date()
+        } : {})
       });
 
       return NextResponse.json({
