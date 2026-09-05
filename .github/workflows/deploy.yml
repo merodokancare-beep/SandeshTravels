@@ -16,7 +16,8 @@ jobs:
           host: ${{ secrets.HOST }}
           username: ${{ secrets.USERNAME }}
           key: ${{ secrets.SSH_KEY }}
-          port: 22
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT || 22 }}
           script: |
             set -e
             cd /var/www/crm.sandeshtravels.in
