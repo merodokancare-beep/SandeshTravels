@@ -361,7 +361,14 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
                 {invoice.days && invoice.days.length > 0 ? (
                   invoice.days.map((d, idx) => (
                     <tr key={d.id || d.day_number} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                      <td style={{ padding: '0.85rem 1rem', fontWeight: '700', color: '#0284c7' }}>Day {d.day_number}</td>
+                      <td style={{ padding: '0.85rem 1rem', fontWeight: '700', color: '#0284c7' }}>
+                        Day {d.day_number}
+                        {parseFloat(d.day_price) > 0 && (
+                          <div style={{ fontSize: '0.75rem', color: '#15803d', fontWeight: '700', marginTop: '0.2rem' }}>
+                            ₹{parseFloat(d.day_price).toLocaleString('en-IN')}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ padding: '0.85rem 1rem', color: '#334155', lineHeight: '1.5' }}>
                         <div style={{ fontWeight: '600', color: '#0f172a' }}>{d.description || 'Full day tour schedule'}</div>
                         {d.activities && <div style={{ fontSize: '0.78rem', color: '#64748b', marginTop: '0.2rem' }}>{d.activities}</div>}

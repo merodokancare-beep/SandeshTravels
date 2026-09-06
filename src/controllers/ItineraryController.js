@@ -73,7 +73,7 @@ export class ItineraryController {
         );
       }
 
-      const { leadId, title, price, totalDays, days, startDate } = await request.json();
+      const { leadId, title, price, totalDays, days, startDate, vehicleCategory, vehicleCount } = await request.json();
 
       if (!leadId || !title || !totalDays) {
         return NextResponse.json(
@@ -84,13 +84,41 @@ export class ItineraryController {
 
       await client.query('BEGIN');
 
-      // Update start_date in leads table
-      await LeadModel.update(parseInt(leadId, 10), { startDate }, client);
+      // Update start_date, vehicleCategory, and vehicleCount in leads table
+      const leadUpdates = { startDate };
+      if (vehicleCategory) {
+        const vCat = String(vehicleCategory).toUpperCase();
+        leadUpdates.vehicleCategory = vCat;
+        leadUpdates.vehicleType = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+      }
+      if (vehicleCount !== undefined && vehicleCount !== null) {
+        leadUpdates.vehicleCount = Math.max(1, parseInt(vehicleCount, 10) || 1);
+      }
+      await LeadModel.update(parseInt(leadId, 10), leadUpdates, client);
 
-      // Clean price string by stripping currency symbols, spaces, and commas
-      const cleanPrice = String(price || '').replace(/[^0-9.]/g, '');
-      const priceNum = parseFloat(cleanPrice) || 0.00;
+      // Validate that EVERY day has a positive price
+      const missingDays = Array.isArray(days)
+        ? days.filter(d => {
+            const amt = parseFloat(d.dayPrice || d.day_price);
+            return isNaN(amt) || amt <= 0;
+          }).map(d => `Day ${d.dayNumber}`)
+        : [];
+
+      if (missingDays.length > 0) {
+        return NextResponse.json(
+          { error: `Validation Error: Every day must have a valid price greater than ₹0. Missing amount on: ${missingDays.join(', ')}.` },
+          { status: 400 }
+        );
+      }
+
+      // Compute total price from daywise sum
+      const daywiseSum = Array.isArray(days)
+        ? days.reduce((acc, d) => acc + (parseFloat(d.dayPrice || d.day_price) || 0), 0)
+        : 0;
+      const finalPrice = daywiseSum > 0 ? daywiseSum : (parseFloat(price) || 0);
+
       const daysCount = parseInt(totalDays, 10) || 1;
+      const minAdvance = Math.round(finalPrice * 0.10); // 10% calculated advance deposit
 
       // Check if itinerary exists for this lead
       const existing = await ItineraryModel.getByLeadId(parseInt(leadId, 10), client);
@@ -98,23 +126,26 @@ export class ItineraryController {
 
       if (existing) {
         itineraryId = existing.id;
-        await ItineraryModel.update(itineraryId, { title, price: priceNum, totalDays: daysCount }, client);
+        await ItineraryModel.update(itineraryId, { title, price: finalPrice, totalDays: daysCount }, client);
       } else {
         const newItin = await ItineraryModel.create({
           leadId: parseInt(leadId, 10),
           title,
-          price: priceNum,
+          price: finalPrice,
           totalDays: daysCount,
           status: 'draft'
         }, client);
         itineraryId = newItin.id;
-
-        // Update lead status to 'quoted' if it's currently 'new'
-        const lead = await LeadModel.getById(parseInt(leadId, 10), client);
-        if (lead && lead.status === 'new') {
-          await LeadModel.update(lead.id, { status: 'quoted' }, client);
-        }
       }
+
+      // Update lead status to 'quoted' if it's currently 'new' and a valid price (> 0) has been configured
+      const lead = await LeadModel.getById(parseInt(leadId, 10), client);
+      if (lead && lead.status === 'new' && finalPrice > 0) {
+        await LeadModel.update(lead.id, { status: 'quoted' }, client);
+      }
+
+      // Sync 10% advance amount to lead record
+      await LeadModel.update(parseInt(leadId, 10), { advanceAmount: minAdvance }, client);
 
       // Auto-assign lead to current admin user if it is currently open/unassigned
       const currentLead = await LeadModel.getById(parseInt(leadId, 10), client);
@@ -141,10 +172,11 @@ export class ItineraryController {
       // Delete all existing days for this itinerary
       await ItineraryModel.deleteDays(itineraryId, client);
 
-      // Insert new days details while preserving any existing driver_id assignments ONLY IF lead is converted
+      // Insert new days details with dayPrice while preserving any existing driver_id assignments ONLY IF lead is converted
       for (const d of days) {
         const hotelId = d.hotelId ? parseInt(d.hotelId, 10) : null;
         const driverId = isConvertedLead ? (d.driverId ? parseInt(d.driverId, 10) : (driverMap[d.dayNumber] || null)) : null;
+        const dayAmount = parseFloat(d.dayPrice || d.day_price) || 0.00;
 
         await ItineraryModel.createDay({
           itineraryId,
@@ -152,7 +184,8 @@ export class ItineraryController {
           hotelId,
           driverId,
           description: d.description || null,
-          activities: d.activities || null
+          activities: d.activities || null,
+          dayPrice: dayAmount
         }, client);
 
         // Manage active stays/stages: if hotel check-in is assigned, create active stay tracker

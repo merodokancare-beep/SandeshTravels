@@ -163,18 +163,22 @@ a {
 
 /* Main Content Workspace */
 .main-content {
-  padding: 2.5rem;
+  padding: 1.5rem 1.75rem;
   overflow-y: auto;
-  max-width: 1400px;
-  margin: 0 auto;
+  overflow-x: hidden;
+  max-width: 100%;
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2.5rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+  gap: 1rem;
 }
 
 /* Card Design & Glassmorphism */
@@ -182,9 +186,12 @@ a {
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--border-radius-lg);
-  padding: 1.75rem;
+  padding: 1.5rem;
   box-shadow: var(--shadow-md);
   transition: transform 0.2s ease, border-color 0.2s ease;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .glass-card:hover {
@@ -323,13 +330,16 @@ a {
 .table-container {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border-radius: var(--border-radius-lg);
   border: 1px solid var(--border);
   background: var(--bg-surface);
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.2) var(--bg-surface);
+  scrollbar-color: rgba(255, 255, 255, 0.3) var(--bg-surface);
+  box-sizing: border-box;
+  display: block;
 }
 
 .table-container::-webkit-scrollbar {

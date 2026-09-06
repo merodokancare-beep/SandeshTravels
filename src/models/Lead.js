@@ -42,15 +42,15 @@ export class LeadModel {
     return res.rows;
   }
 
-  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
+  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, vehicleCategory = 'T', vehicleCount = 1, vehiclePreferenceDetails = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const determinedSource = source || (partnerId ? 'partner' : 'direct');
     const finalAttendedAt = attendedBy && !attendedAt ? new Date() : attendedAt;
     const res = await q(
-      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, notes, attended_by, attended_by_name, attended_at, advance_amount, advance_paid, payment_status, payment_method, transaction_ref)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, status, start_date, source, package_name, vehicle_type, vehicle_category, vehicle_count, vehicle_preference_details, notes, attended_by, attended_by_name, attended_at, advance_amount, advance_paid, payment_status, payment_method, transaction_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
-      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, notes, attendedBy, attendedByName, finalAttendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef]
+      [partnerId, clientName, clientPhone, travelDates || null, numTravelers, status, startDate, determinedSource, packageName, vehicleType, vehicleCategory || 'T', parseInt(vehicleCount, 10) || 1, vehiclePreferenceDetails || null, notes, attendedBy, attendedByName, finalAttendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef]
     );
     return res.rows[0];
   }
@@ -61,7 +61,7 @@ export class LeadModel {
     const values = [];
     let idx = 1;
 
-    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, status, startDate, source, packageName, vehicleType, vehicleCategory, vehicleCount, vehiclePreferenceDetails, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy } = fields;
 
     if (clientName !== undefined) {
       updates.push(`client_name = $${idx++}`);
@@ -101,6 +101,18 @@ export class LeadModel {
     if (vehicleType !== undefined) {
       updates.push(`vehicle_type = $${idx++}`);
       values.push(vehicleType);
+    }
+    if (vehicleCategory !== undefined) {
+      updates.push(`vehicle_category = $${idx++}`);
+      values.push(vehicleCategory);
+    }
+    if (vehicleCount !== undefined) {
+      updates.push(`vehicle_count = $${idx++}`);
+      values.push(parseInt(vehicleCount, 10) || 1);
+    }
+    if (vehiclePreferenceDetails !== undefined) {
+      updates.push(`vehicle_preference_details = $${idx++}`);
+      values.push(vehiclePreferenceDetails);
     }
     if (notes !== undefined) {
       updates.push(`notes = $${idx++}`);

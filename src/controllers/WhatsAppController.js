@@ -41,10 +41,9 @@ export class WhatsAppController {
         );
       }
 
-      const host = request.headers.get('host') || '';
-      const baseDomain = (!host || host.includes('localhost') || host.includes('127.0.0.1'))
-        ? (process.env.NEXT_PUBLIC_APP_URL || 'https://www.sandeshtravels.in')
-        : `${host.includes('http') ? '' : 'https://'}${host}`;
+      const host = request.headers.get('host') || 'localhost:3000';
+      const proto = request.headers.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+      const baseDomain = `${proto}://${host}`;
       const guestItineraryUrl = `${baseDomain.replace(/\/$/, '')}/itinerary/${itineraryId}`;
 
       let message = '';

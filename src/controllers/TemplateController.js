@@ -47,7 +47,15 @@ export class TemplateController {
       }
 
       const cleanPrice = String(estimatedPrice || '').replace(/[^0-9.]/g, '');
-      const priceVal = parseFloat(cleanPrice) || 0.00;
+      let priceVal = parseFloat(cleanPrice) || 0.00;
+      
+      // If days array contains day prices, auto-calculate estimated price sum
+      const parsedDays = Array.isArray(days) ? days : (typeof days === 'string' ? JSON.parse(days) : []);
+      const daysPriceSum = parsedDays.reduce((sum, d) => sum + (parseFloat(d?.dayPrice || d?.day_price) || 0), 0);
+      if (daysPriceSum > 0) {
+        priceVal = daysPriceSum;
+      }
+
       const daysJson = typeof days === 'string' ? days : JSON.stringify(days);
 
       const template = await TemplateModel.create({
@@ -97,7 +105,15 @@ export class TemplateController {
       }
 
       const cleanPrice = String(estimatedPrice || '').replace(/[^0-9.]/g, '');
-      const priceVal = parseFloat(cleanPrice) || 0.00;
+      let priceVal = parseFloat(cleanPrice) || 0.00;
+
+      // If days array contains day prices, auto-calculate estimated price sum
+      const parsedDays = Array.isArray(days) ? days : (typeof days === 'string' ? JSON.parse(days) : []);
+      const daysPriceSum = parsedDays.reduce((sum, d) => sum + (parseFloat(d?.dayPrice || d?.day_price) || 0), 0);
+      if (daysPriceSum > 0) {
+        priceVal = daysPriceSum;
+      }
+
       const daysJson = typeof days === 'string' ? days : JSON.stringify(days);
 
       const template = await TemplateModel.update(parseInt(id, 10), {

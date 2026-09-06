@@ -162,6 +162,11 @@ export default async function GuestItinerary({ params }) {
                         {getFormattedDateForDay(lead.start_date, day.day_number)}
                       </span>
                     )}
+                    {parseFloat(day.day_price) > 0 && (
+                      <span className="badge" style={{ textTransform: 'none', fontSize: '0.8rem', padding: '0.2rem 0.6rem', background: 'rgba(56,189,248,0.12)', border: '1px solid rgba(56,189,248,0.3)', color: '#38BDF8' }}>
+                        <i className="fa-solid fa-indian-rupee-sign" style={{ marginRight: '0.25rem' }}></i> ₹{parseFloat(day.day_price).toLocaleString('en-IN')}
+                      </span>
+                    )}
                   </div>
                   
                   {/* Activities tags chips */}

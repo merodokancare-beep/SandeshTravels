@@ -59,6 +59,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [clientPhone, setClientPhone] = useState('');
   const [travelDates, setTravelDates] = useState('');
   const [numTravelers, setNumTravelers] = useState(1);
+  const [vehicleCategory, setVehicleCategory] = useState('T');
+  const [vehicleCount, setVehicleCount] = useState(1);
   const [isEditingGuest, setIsEditingGuest] = useState(false);
   const [guestSaveLoading, setGuestSaveLoading] = useState(false);
   const [itineraryId, setItineraryId] = useState(null);
@@ -214,21 +216,25 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   };
 
   const isLeadConverted = lead && (lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed');
+  const missingDays = days.filter(d => !d.dayPrice || parseFloat(d.dayPrice) <= 0);
+  const hasMissingDays = days.length === 0 || missingDays.length > 0;
 
   const getDriverOptionText = (d, dayNumber) => {
-    const defaultText = `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
+    const catTag = d.vehicle_category ? `[${d.vehicle_category}-${d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)}P] ` : '';
+    const defaultText = `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
     if (!startDate) return defaultText;
     const dayDateStr = getIsoDateForDay(startDate, dayNumber);
     const booking = d.bookings?.find(b => b.date === dayDateStr && String(b.lead_id) !== String(leadId) && b.lead_status === 'converted');
     if (booking) {
       const displayStatus = booking.lead_status.toUpperCase();
-      return `${d.driver_name} (${d.vehicle_model || 'No Vehicle'}) ⚠️ Busy: ${booking.client_name} (${displayStatus})`;
+      return `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'}) ⚠️ Busy: ${booking.client_name} (${displayStatus})`;
     }
     return defaultText;
   };
 
   const getDriverOptionTextForEntireJourney = (d, totalDays) => {
-    const defaultText = `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
+    const catTag = d.vehicle_category ? `[${d.vehicle_category}-${d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)}P] ` : '';
+    const defaultText = `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
     if (!startDate || !totalDays) return defaultText;
     
     const conflictingDates = [];
@@ -241,7 +247,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     }
     
     if (conflictingDates.length > 0) {
-      return `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${conflictingDates.join(', ')}`;
+      return `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${conflictingDates.join(', ')}`;
     }
     return defaultText;
   };
@@ -306,7 +312,13 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           setLocalPhone(parsedPhone.localNumber);
           setClientPhone(itinData.lead.client_phone || '');
           setTravelDates(itinData.lead.travel_dates || '');
-          setNumTravelers(itinData.lead.num_travelers || 1);
+          const travelers = itinData.lead.num_travelers || 1;
+          setNumTravelers(travelers);
+          const vCat = (itinData.lead.vehicle_category || 'T').toUpperCase();
+          setVehicleCategory(vCat);
+          const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+          const vCnt = itinData.lead.vehicle_count || Math.max(1, Math.ceil(travelers / cap));
+          setVehicleCount(vCnt);
         }
         if (itinData.lead.start_date) {
           setStartDate(itinData.lead.start_date.substring(0, 10));
@@ -319,14 +331,27 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           setTotalDays(itinData.itinerary.total_days);
           
           // Map loaded days details
-          const loadedDays = itinData.days.map(d => ({
-            dayNumber: d.day_number,
-            hotelId: d.hotel_id || '',
-            driverId: d.driver_id || '',
-            description: d.description || '',
-            activities: d.activities || ''
-          }));
+          const currentVCount = vCnt || 1;
+          const loadedDays = itinData.days.map(d => {
+            const total = (d.day_price !== undefined && d.day_price !== null && parseFloat(d.day_price) > 0) ? parseFloat(d.day_price) : 0;
+            const perCar = total > 0 ? (total / currentVCount) : 0;
+            return {
+              dayNumber: d.day_number || d.dayNumber,
+              hotelId: d.hotel_id || '',
+              driverId: d.driver_id || '',
+              description: d.description || '',
+              activities: d.activities || '',
+              perCarPrice: perCar > 0 ? (Number.isInteger(perCar) ? String(perCar) : perCar.toFixed(2)) : '',
+              dayPrice: total > 0 ? String(total) : ''
+            };
+          });
           setDays(loadedDays);
+          const daySum = loadedDays.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+          if (daySum > 0) {
+            setPrice(daySum.toFixed(2));
+          } else {
+            setPrice(itinData.itinerary.price ? String(itinData.itinerary.price) : '0.00');
+          }
         } else {
           // New itinerary defaults
           setTitle(`Custom Travel Plan for ${itinData.lead.client_name}`);
@@ -378,7 +403,9 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         hotelId: '',
         driverId: '',
         description: '',
-        activities: ''
+        activities: '',
+        perCarPrice: '',
+        dayPrice: ''
       });
     }
     setDays(arr);
@@ -389,22 +416,28 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     const count = parseInt(newCount, 10) || 1;
     setTotalDays(count);
     
+    let updated = [...days];
     if (count > days.length) {
       // Append new blank days
-      const updated = [...days];
       for (let i = days.length + 1; i <= count; i++) {
         updated.push({
           dayNumber: i,
           hotelId: '',
           driverId: '',
           description: '',
-          activities: ''
+          activities: '',
+          perCarPrice: '',
+          dayPrice: ''
         });
       }
-      setDays(updated);
     } else if (count < days.length) {
       // Truncate days
-      setDays(days.slice(0, count));
+      updated = days.slice(0, count);
+    }
+    setDays(updated);
+    const sum = updated.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+    if (sum > 0) {
+      setPrice(sum.toFixed(2));
     }
   };
 
@@ -412,6 +445,59 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     const updated = [...days];
     updated[index][field] = value;
     setDays(updated);
+
+    if (field === 'dayPrice') {
+      const sum = updated.reduce((acc, d) => {
+        const p = parseFloat(d.dayPrice);
+        return acc + (isNaN(p) ? 0 : p);
+      }, 0);
+      setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
+    }
+  };
+
+  // Handle per-single-vehicle rate entry on any program day
+  const handleDayPerCarPriceChange = (index, value) => {
+    const updated = [...days];
+    updated[index].perCarPrice = value;
+    const numVal = parseFloat(value);
+    const currentVCount = vehicleCount || 1;
+    if (!isNaN(numVal) && numVal > 0) {
+      updated[index].dayPrice = String(Math.round(numVal * currentVCount));
+    } else {
+      updated[index].dayPrice = '';
+    }
+    setDays(updated);
+
+    // Automatically recalculate overall price as sum of all day prices
+    const sum = updated.reduce((acc, d) => {
+      const p = parseFloat(d.dayPrice);
+      return acc + (isNaN(p) ? 0 : p);
+    }, 0);
+    setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
+  };
+
+  // Recalculate all day prices and overall price when fleet count changes
+  const handleFleetCountChange = (newCount) => {
+    const count = Math.max(1, parseInt(newCount, 10) || 1);
+    setVehicleCount(count);
+
+    const updated = days.map(d => {
+      const perCar = parseFloat(d.perCarPrice);
+      if (!isNaN(perCar) && perCar > 0) {
+        return {
+          ...d,
+          dayPrice: String(Math.round(perCar * count))
+        };
+      }
+      return d;
+    });
+    setDays(updated);
+
+    const sum = updated.reduce((acc, d) => {
+      const p = parseFloat(d.dayPrice);
+      return acc + (isNaN(p) ? 0 : p);
+    }, 0);
+    setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
   };
 
   // Overwrite state variables with a selected package blueprint template
@@ -420,22 +506,29 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     const selected = templates.find(t => t.id === parseInt(templateId, 10));
     if (selected) {
       setTitle(`${selected.name} for ${lead?.client_name}`);
-      setPrice(selected.estimated_price);
       setTotalDays(selected.total_days);
       
       const templateDays = typeof selected.days === 'string' ? JSON.parse(selected.days) : selected.days;
       
-      const mappedDays = templateDays.map(d => ({
-        dayNumber: d.dayNumber,
-        hotelId: '',
-        driverId: '',
-        description: d.description || '',
-        activities: d.activities || ''
-      }));
+      const currentVCount = vehicleCount || 1;
+      const mappedDays = templateDays.map(d => {
+        const rawPrice = (d.dayPrice !== undefined && d.dayPrice !== null && parseFloat(d.dayPrice) > 0) ? parseFloat(d.dayPrice) : ((d.day_price !== undefined && d.day_price !== null && parseFloat(d.day_price) > 0) ? parseFloat(d.day_price) : 0);
+        return {
+          dayNumber: d.dayNumber,
+          hotelId: '',
+          driverId: '',
+          description: d.description || '',
+          activities: d.activities || '',
+          perCarPrice: rawPrice > 0 ? String(rawPrice) : '',
+          dayPrice: rawPrice > 0 ? String(Math.round(rawPrice * currentVCount)) : ''
+        };
+      });
       
+      const sum = mappedDays.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+      setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
       setDays(mappedDays);
       setSelectedTemplateId(templateId);
-      setSuccess(`Loaded preset package "${selected.name}" template. Remember to hit "Save & Publish Itinerary" below to update changes!`);
+      setSuccess(`Loaded preset package "${selected.name}" template. Enter daywise amounts below to calculate price.`);
       setError('');
     }
   };
@@ -448,19 +541,26 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
     const templateDays = typeof selected.days === 'string' ? JSON.parse(selected.days) : selected.days;
     const startDayIndex = days.length;
+    const currentVCount = vehicleCount || 1;
     
-    const appendedDays = templateDays.map((d, idx) => ({
-      dayNumber: startDayIndex + idx + 1,
-      hotelId: '',
-      driverId: '',
-      description: d.description || '',
-      activities: d.activities || ''
-    }));
+    const appendedDays = templateDays.map((d, idx) => {
+      const rawPrice = (d.dayPrice !== undefined && d.dayPrice !== null && parseFloat(d.dayPrice) > 0) ? parseFloat(d.dayPrice) : 0;
+      return {
+        dayNumber: startDayIndex + idx + 1,
+        hotelId: '',
+        driverId: '',
+        description: d.description || '',
+        activities: d.activities || '',
+        perCarPrice: rawPrice > 0 ? String(rawPrice) : '',
+        dayPrice: rawPrice > 0 ? String(Math.round(rawPrice * currentVCount)) : ''
+      };
+    });
 
     const newDays = [...days, ...appendedDays];
     setDays(newDays);
     setTotalDays(newDays.length);
-    setPrice(prev => (parseFloat(prev) || 0) + (parseFloat(selected.estimated_price) || 0));
+    const sum = newDays.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+    setPrice(sum > 0 ? sum.toFixed(2) : (parseFloat(price) || 0).toFixed(2));
 
     if (!title || title.includes('Custom Travel Plan')) {
       setTitle(`${selected.name} for ${lead?.client_name}`);
@@ -490,32 +590,35 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     if (selectedTemplates.length === 0) return;
 
     let combinedDays = [];
-    let totalPrice = 0;
     let regionNames = [];
+    const currentVCount = vehicleCount || 1;
 
     selectedTemplates.forEach(t => {
       if (!regionNames.includes(t.region)) {
         regionNames.push(t.region);
       }
-      totalPrice += (parseFloat(t.estimated_price) || 0);
 
       const templateDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
       if (Array.isArray(templateDays)) {
         templateDays.forEach(d => {
+          const rawPrice = (d.dayPrice !== undefined && d.dayPrice !== null && parseFloat(d.dayPrice) > 0) ? parseFloat(d.dayPrice) : 0;
           combinedDays.push({
             dayNumber: combinedDays.length + 1,
             hotelId: '',
             driverId: '',
             description: d.description || '',
-            activities: d.activities || ''
+            activities: d.activities || '',
+            perCarPrice: rawPrice > 0 ? String(rawPrice) : '',
+            dayPrice: rawPrice > 0 ? String(Math.round(rawPrice * currentVCount)) : ''
           });
         });
       }
     });
 
+    const sum = combinedDays.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
     const regionsStr = regionNames.join(' & ');
     setTitle(`${regionsStr} Multi-Region Tour for ${lead?.client_name || 'Guest'}`);
-    setPrice(totalPrice.toFixed(2));
+    setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
     setTotalDays(combinedDays.length);
     setDays(combinedDays);
     setSuccess(`Combined ${selectedTemplates.length} regional template(s) (${combinedDays.length} days total) for ${lead?.client_name || 'Guest'}!`);
@@ -529,30 +632,33 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     if (selectedTemplates.length === 0) return;
 
     let currentDays = [...days];
-    let totalPrice = parseFloat(price) || 0;
     let addedRegions = [];
+    const currentVCount = vehicleCount || 1;
 
     selectedTemplates.forEach(t => {
       if (!addedRegions.includes(t.region)) {
         addedRegions.push(t.region);
       }
-      totalPrice += (parseFloat(t.estimated_price) || 0);
 
       const templateDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
       templateDays.forEach(d => {
+        const rawPrice = (d.dayPrice !== undefined && d.dayPrice !== null && parseFloat(d.dayPrice) > 0) ? parseFloat(d.dayPrice) : ((d.day_price !== undefined && d.day_price !== null && parseFloat(d.day_price) > 0) ? parseFloat(d.day_price) : 0);
         currentDays.push({
           dayNumber: currentDays.length + 1,
           hotelId: '',
           driverId: '',
           description: d.description || '',
-          activities: d.activities || ''
+          activities: d.activities || '',
+          perCarPrice: rawPrice > 0 ? String(rawPrice) : '',
+          dayPrice: rawPrice > 0 ? String(Math.round(rawPrice * currentVCount)) : ''
         });
       });
     });
 
     setDays(currentDays);
     setTotalDays(currentDays.length);
-    setPrice(totalPrice);
+    const sum = currentDays.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+    setPrice(sum > 0 ? sum.toFixed(2) : '0.00');
 
     if (!title || title.includes('Custom Travel Plan')) {
       setTitle(`${addedRegions.join(' & ')} Tour for ${lead?.client_name}`);
@@ -577,7 +683,9 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           clientName,
           clientPhone: fullPhone,
           travelDates,
-          numTravelers
+          numTravelers,
+          vehicleCategory,
+          vehicleCount
         })
       });
       const data = await res.json();
@@ -590,6 +698,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         setClientPhone(data.lead.client_phone || '');
         setTravelDates(data.lead.travel_dates || '');
         setNumTravelers(data.lead.num_travelers || 1);
+        setVehicleCategory(data.lead.vehicle_category || 'T');
+        setVehicleCount(data.lead.vehicle_count || 1);
         setIsEditingGuest(false);
         setSuccess(`Guest details updated successfully! Saved mobile number: "${data.lead.client_phone}".`);
       } else {
@@ -607,6 +717,23 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     e.preventDefault();
     setError('');
     setSuccess('');
+
+    // Strict Daywise Pricing validation: EVERY single configured day must have a valid positive amount
+    const invalidDays = days.filter(d => {
+      const amt = parseFloat(d.dayPrice);
+      return isNaN(amt) || amt <= 0;
+    }).map(d => `Day ${d.dayNumber}`);
+
+    if (days.length === 0 || invalidDays.length > 0) {
+      setError(`Validation Error: All days must have a price set. Missing or ₹0 amount on: ${invalidDays.length > 0 ? invalidDays.join(', ') : 'All Days'}. Please enter daily rates for every day before saving.`);
+      return;
+    }
+
+    const daywiseTotal = days.reduce((acc, d) => acc + (parseFloat(d.dayPrice) || 0), 0);
+    if (daywiseTotal <= 0) {
+      setError('Validation Error: Itinerary cannot be saved without an amount (₹0). Please enter the daywise pricing rate for each program day before saving & publishing.');
+      return;
+    }
 
     // Journey Start Date validation (no back dates for new/quoted itineraries)
     if (startDate && (!lead || lead.status === 'new' || lead.status === 'quoted')) {
@@ -656,7 +783,9 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           price,
           totalDays,
           days: sanitizedDays,
-          startDate // Send the updated start_date too
+          startDate, // Send the updated start_date too
+          vehicleCategory,
+          vehicleCount
         }),
       });
 
@@ -680,22 +809,49 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
   const getWhatsAppMessageText = () => {
     if (!lead || !itineraryId) return '';
-    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
+    const baseDomain = (typeof window !== 'undefined' && window.location && window.location.origin)
       ? window.location.origin
-      : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.sandeshtravels.in');
+      : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
     const guestItineraryUrl = `${baseDomain.replace(/\/$/, '')}/itinerary/${itineraryId}`;
     const assignedDay = days.find(d => d.driverId) || {};
     const driver = drivers.find(drv => String(drv.id) === String(assignedDay.driverId));
     const hasDriver = !!driver;
     
+    const vCat = (vehicleCategory || lead?.vehicle_category || 'T').toUpperCase();
+    const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+    const vCount = vehicleCount || lead?.vehicle_count || Math.ceil((numTravelers || 1) / cap);
+    const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+
+    const formattedStartDate = startDate 
+      ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : (lead.travel_dates || 'Flexible');
+
+    const totalPrice = parseFloat(price) || 0;
+    const advanceRequired = Math.round(totalPrice * 0.1);
+
     if ((lead.status === 'converted' || lead.status === 'completed') && hasDriver) {
-      const formattedStartDate = startDate 
-        ? new Date(startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        : 'Flexible';
-        
-      return `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n*JOURNEY DETAILS:*\n• Route: ${title}\n• Start Date: ${formattedStartDate}\n• Duration: ${totalDays} Days\n• Overall Price: Rs. ${price}\n\n*ASSIGNED DRIVER & VEHICLE:*\n• Driver Name: ${driver.driver_name}\n• Driver Contact: ${driver.driver_phone}\n• Vehicle: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\nPlease click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n👉 ${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
+      return `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n*JOURNEY DETAILS:*\n• Route: ${title}\n• Start Date: ${formattedStartDate}\n• Duration: ${totalDays} Days\n• Guests: ${numTravelers} Traveler(s)\n• Vehicle: ${vCount}x ${vLabel}\n• Overall Price: Rs. ${price}\n\n*ASSIGNED DRIVER & VEHICLE:*\n• Driver Name: ${driver.driver_name}\n• Driver Contact: ${driver.driver_phone}\n• Assigned Car: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\nPlease click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
     }
-    return `Hi ${lead.client_name}, this is Sandesh Travels. We have prepared your custom day-by-day travel plan and itinerary! 🗺️✈️\n\nPlease click this link to view all your hotel stay details, drivers, and activities:\n👉 ${guestItineraryUrl}\n\nLet us know if you want to proceed! Thank you.`;
+
+    let msg = `*TOUR QUOTATION & ITINERARY – Sandesh Travels* 🏔️✈️\n\n`;
+    msg += `Dear *${lead.client_name}*,\n\n`;
+    msg += `Greetings from *Sandesh Travels*!\n`;
+    msg += `We have prepared your customized day-by-day travel plan and price quotation.\n\n`;
+    msg += `📋 *QUOTATION DETAILS:*\n`;
+    msg += `• *Tour Plan:* ${title}\n`;
+    msg += `• *Duration:* ${totalDays} Days / ${Math.max(1, totalDays - 1)} Nights\n`;
+    msg += `• *Journey Start Date:* ${formattedStartDate}\n`;
+    msg += `• *Guests:* ${numTravelers} Traveler(s)\n`;
+    msg += `• *Vehicle Allocated:* ${vCount}x ${vLabel}\n`;
+    if (totalPrice > 0) {
+      msg += `• *Total Package Cost:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
+      msg += `• *10% Advance Deposit to Confirm:* Rs. ${advanceRequired.toLocaleString('en-IN')}\n`;
+    }
+    msg += `\n🗺️ *VIEW COMPLETE DAY-BY-DAY ITINERARY & STAYS:*\n`;
+    msg += `${guestItineraryUrl}\n\n`;
+    msg += `You can review the daywise program, sightseeing spots, and hotels on the link above. To confirm your booking, please submit the 10% advance deposit via the portal or reach out to us directly.\n\n`;
+    msg += `Warm regards,\n*Sandesh Travels Team*`;
+    return msg;
   };
 
   const getWhatsAppLink = () => {
@@ -932,6 +1088,47 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                     />
                   </div>
 
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>PREFERRED VEHICLE CATEGORY</label>
+                    <select
+                      className="form-control"
+                      value={vehicleCategory}
+                      onChange={(e) => setVehicleCategory(e.target.value)}
+                      style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                    >
+                      <option value="T">T-Series (Hatchback/Sedan - Max 4 Pax)</option>
+                      <option value="Z">Z-Series (MUV/SUV - Max 6 Pax)</option>
+                      <option value="J">J-Series (Maxi Cab - Max 8 Pax)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>VEHICLES REQUIRED (FLEET COUNT)</label>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        max="20"
+                        className="form-control"
+                        value={vehicleCount}
+                        onChange={(e) => setVehicleCount(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.35rem 0.6rem', fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                        title="Auto-calculate based on passenger capacity"
+                        onClick={() => {
+                          const cap = vehicleCategory === 'J' ? 8 : vehicleCategory === 'Z' ? 6 : 4;
+                          setVehicleCount(Math.max(1, Math.ceil((numTravelers || 1) / cap)));
+                        }}
+                      >
+                        <i className="fa-solid fa-arrows-rotate"></i> Auto
+                      </button>
+                    </div>
+                  </div>
+
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -983,6 +1180,28 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                     <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>GUEST SIZE</label>
                     <strong>{lead?.num_travelers} travelers</strong>
                   </div>
+
+                  {/* Preferred Vehicle Requirements Snapshot */}
+                  {(() => {
+                    const vCat = (vehicleCategory || lead?.vehicle_category || 'T').toUpperCase();
+                    const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+                    const vCount = vehicleCount || lead?.vehicle_count || Math.ceil((numTravelers || 1) / cap);
+                    const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+                    return (
+                      <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.25)', marginTop: '0.25rem' }}>
+                        <label style={{ color: '#38BDF8', display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.2rem' }}>
+                          🚗 PREFERRED VEHICLE FLEET
+                        </label>
+                        <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#FFF' }}>
+                          {vCount}x {vCat}-Series ({vLabel})
+                        </div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                          Allocated for {numTravelers} traveler(s) ({vCount * cap} max seats)
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div>
                     <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>SOURCE</label>
                     {lead?.partner_name ? (
@@ -1224,7 +1443,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                                 </span>
                               </div>
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                {t.total_days} Days • Rs. {t.estimated_price}
+                                {t.total_days} Days
                               </span>
                             </label>
                           );
@@ -1240,14 +1459,13 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   {(() => {
                     const selectedObjs = templates.filter(t => selectedMultiTemplateIds.includes(String(t.id)));
                     const combinedTotalDays = selectedObjs.reduce((acc, curr) => acc + parseInt(curr.total_days || 1, 10), 0);
-                    const combinedTotalPrice = selectedObjs.reduce((acc, curr) => acc + (parseFloat(curr.estimated_price) || 0), 0);
 
                     return (
                       <>
                         <div style={{ fontSize: '0.82rem' }}>
                           <strong style={{ color: '#FFF' }}>{selectedObjs.length} Templates Selected</strong>
                           <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
-                            Total: <strong>{combinedTotalDays} Days</strong> • Price: <strong style={{ color: 'var(--accent-teal)' }}>Rs. {combinedTotalPrice}</strong>
+                            Total Duration: <strong>{combinedTotalDays} Days</strong>
                           </span>
                         </div>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1288,7 +1506,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
               <h2 style={{ fontSize: '1.3rem' }}>Configure Travel Itinerary</h2>
               
               {/* Header config inputs */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1.2fr', gap: '1rem', alignItems: 'start' }}>
                 <div className="form-group">
                   <label htmlFor="title">Itinerary Program Title</label>
                   <input
@@ -1314,15 +1532,147 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="price">Overall Price (Rs.)</label>
+                  <label htmlFor="price">
+                    Total Package Price (Rs.)
+                  </label>
                   <input
                     type="text"
                     id="price"
                     className="form-control"
                     value={price}
                     onChange={(e) => setPrice(e.target.value)}
+                    placeholder="Auto-calculated from day rates"
                     required
+                    style={{ fontWeight: 700, color: '#38BDF8' }}
                   />
+                  <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', fontWeight: 500 }}>
+                    <i className="fa-solid fa-calculator"></i> Auto-summed from day rates
+                  </span>
+                </div>
+              </div>
+
+              {/* Trip Vehicle Category & Fleet Configuration */}
+              <div style={{
+                background: 'rgba(56, 189, 248, 0.05)',
+                border: '1px solid rgba(56, 189, 248, 0.25)',
+                borderRadius: 'var(--border-radius-md)',
+                padding: '1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <i className="fa-solid fa-car-side" style={{ color: 'var(--accent-teal)', fontSize: '1.1rem' }}></i>
+                    <strong style={{ color: '#FFF', fontSize: '0.95rem' }}>Trip Vehicle & Fleet Configuration</strong>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      (Change category or fleet size anytime per guest preference)
+                    </span>
+                  </div>
+                  {/* Realtime capacity status badge */}
+                  {(() => {
+                    const vCat = (vehicleCategory || 'T').toUpperCase();
+                    const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+                    const totalCapacity = (vehicleCount || 1) * cap;
+                    const guests = numTravelers || 1;
+                    const isUnderCapacity = totalCapacity < guests;
+                    return (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <span className="badge" style={{
+                          background: isUnderCapacity ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                          border: isUnderCapacity ? '1px solid #ef4444' : '1px solid #10b981',
+                          color: isUnderCapacity ? '#fca5a5' : '#6ee7b7',
+                          fontSize: '0.75rem',
+                          padding: '0.2rem 0.6rem'
+                        }}>
+                          <i className={isUnderCapacity ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-users"} style={{ marginRight: '0.3rem' }}></i>
+                          {vehicleCount}x {vCat}-Series = {totalCapacity} Seats for {guests} Guest{guests > 1 ? 's' : ''}
+                        </span>
+                        {isUnderCapacity && (
+                          <span style={{ fontSize: '0.72rem', color: '#f87171' }}>
+                            ⚠️ Need at least {Math.ceil(guests / cap)} car(s) or higher series
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr auto', gap: '1rem', alignItems: 'center' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label htmlFor="vehicleCategorySelect" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                      Preferred Vehicle Category (SK Rule)
+                    </label>
+                    <select
+                      id="vehicleCategorySelect"
+                      className="form-control"
+                      value={vehicleCategory}
+                      onChange={(e) => {
+                        const newCat = e.target.value;
+                        setVehicleCategory(newCat);
+                      }}
+                      style={{ padding: '0.45rem 0.75rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
+                    >
+                      <option value="T">T-Series — Hatchback / Sedan (Max 4 Pax / Car)</option>
+                      <option value="Z">Z-Series — MUV / SUV / Innova (Max 6 Pax / Car)</option>
+                      <option value="J">J-Series — Maxi Cab / Bolero (Max 8 Pax / Car)</option>
+                    </select>
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label htmlFor="vehicleCountInput" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+                      Fleet Count (Cars Needed)
+                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                        onClick={() => handleFleetCountChange(Math.max(1, (parseInt(vehicleCount, 10) || 1) - 1))}
+                        title="Decrease vehicle count"
+                      >
+                        -
+                      </button>
+                      <input
+                        id="vehicleCountInput"
+                        type="number"
+                        min="1"
+                        max="20"
+                        className="form-control"
+                        value={vehicleCount}
+                        onChange={(e) => handleFleetCountChange(e.target.value)}
+                        style={{ textAlign: 'center', fontWeight: 700, color: '#38BDF8', fontSize: '0.9rem', padding: '0.45rem' }}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
+                        onClick={() => handleFleetCountChange((parseInt(vehicleCount, 10) || 1) + 1)}
+                        title="Increase vehicle count"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
+                    <label style={{ fontSize: '0.78rem', opacity: 0, marginBottom: '0.25rem' }}>Auto</label>
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}
+                      title="Auto-calculate required vehicle count from guest size"
+                      onClick={() => {
+                        const vCat = (vehicleCategory || 'T').toUpperCase();
+                        const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+                        const autoCnt = Math.max(1, Math.ceil((numTravelers || 1) / cap));
+                        handleFleetCountChange(autoCnt);
+                        addToast(`Fleet size auto-calculated to ${autoCnt}x ${vCat}-Series vehicle(s) for ${numTravelers || 1} travelers.`, 'info');
+                      }}
+                    >
+                      <i className="fa-solid fa-calculator"></i> Auto-Fleet Size
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1376,7 +1726,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                         .filter(d => isDriverFreeForEntireJourney(d, days.length))
                         .map(d => (
                           <option key={d.id} value={d.id}>
-                            {d.driver_name} ({d.vehicle_model || 'No Vehicle'} - {d.vehicle_number || 'N/A'})
+                            {d.vehicle_category ? `[${d.vehicle_category}-${d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)}P] ` : ''}{d.driver_name} ({d.vehicle_model || 'No Vehicle'} - {d.vehicle_number || 'N/A'})
                           </option>
                         ))
                       }
@@ -1414,17 +1764,114 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                       borderRadius: 'var(--border-radius-md)',
                       border: '1px solid var(--border)'
                     }}>
-                      <h4 style={{ fontSize: '1rem', marginBottom: '1rem', color: '#FFF', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                          Day {day.dayNumber} Details
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFF' }}>
+                            Day {day.dayNumber} Logistics & Activities
+                          </span>
                           {startDate && (
                             <span className="badge badge-completed" style={{ textTransform: 'none', fontSize: '0.75rem', padding: '0.15rem 0.5rem' }}>
                               {getFormattedDateForDay(startDate, day.dayNumber)}
                             </span>
                           )}
-                        </span>
-                        <span className="badge badge-new" style={{ textTransform: 'none' }}>Day {day.dayNumber}</span>
-                      </h4>
+                        </div>
+
+                        {/* Daywise Single-Vehicle Rate Input with Auto-Calculated Fleet Total */}
+                        {(() => {
+                          const vCat = (vehicleCategory || lead?.vehicle_category || 'T').toUpperCase();
+                          const currentCount = vehicleCount || 1;
+                          const isInvalid = !day.perCarPrice || parseFloat(day.perCarPrice) <= 0;
+                          const perCarNum = parseFloat(day.perCarPrice) || 0;
+                          const dayTotalNum = parseFloat(day.dayPrice) || (perCarNum * currentCount);
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.25rem' }}>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.55rem',
+                                background: isInvalid ? 'rgba(239, 68, 68, 0.12)' : 'rgba(56, 189, 248, 0.08)',
+                                border: isInvalid ? '1.5px solid #EF4444' : '1px solid rgba(56, 189, 248, 0.35)',
+                                padding: '0.35rem 0.75rem',
+                                borderRadius: '8px',
+                                transition: 'all 0.2s ease',
+                                flexWrap: 'wrap'
+                              }}>
+                                <i className={isInvalid ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-car-side"} 
+                                   style={{ color: isInvalid ? '#EF4444' : 'var(--accent-teal)', fontSize: '0.85rem' }}></i>
+                                <label style={{ fontSize: '0.78rem', color: isInvalid ? '#FCA5A5' : '#FFF', fontWeight: 600, margin: 0 }}>
+                                  {currentCount > 1 
+                                    ? `Day ${day.dayNumber} Rate per Car (${vCat}-Series):` 
+                                    : `Day ${day.dayNumber} Rate (${vCat}-Series):`}
+                                </label>
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                  <span style={{ position: 'absolute', left: '0.45rem', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>₹</span>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    step="0.01"
+                                    placeholder="e.g. 3500"
+                                    className="form-control"
+                                    style={{
+                                      width: '120px',
+                                      padding: '0.25rem 0.5rem 0.25rem 1.25rem',
+                                      fontSize: '0.85rem',
+                                      background: 'rgba(0,0,0,0.4)',
+                                      color: isInvalid ? '#F87171' : '#38BDF8',
+                                      fontWeight: 700,
+                                      border: isInvalid ? '1px solid rgba(239, 68, 68, 0.6)' : '1px solid var(--border)'
+                                    }}
+                                    value={day.perCarPrice || ''}
+                                    onFocus={(e) => {
+                                      if (!e.target.value || parseFloat(e.target.value) === 0 || e.target.value === '0' || e.target.value === '0.00') {
+                                        handleDayPerCarPriceChange(idx, '');
+                                      } else {
+                                        e.target.select();
+                                      }
+                                    }}
+                                    onClick={(e) => {
+                                      if (!e.target.value || parseFloat(e.target.value) === 0 || e.target.value === '0' || e.target.value === '0.00') {
+                                        handleDayPerCarPriceChange(idx, '');
+                                      } else {
+                                        e.target.select();
+                                      }
+                                    }}
+                                    onChange={(e) => handleDayPerCarPriceChange(idx, e.target.value)}
+                                  />
+                                </div>
+
+                                {/* Calculated Multi-Car Total Badge */}
+                                {currentCount > 1 && (
+                                  <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.35rem',
+                                    background: 'rgba(56, 189, 248, 0.15)',
+                                    border: '1px solid rgba(56, 189, 248, 0.4)',
+                                    padding: '0.2rem 0.55rem',
+                                    borderRadius: '6px',
+                                    fontSize: '0.78rem',
+                                    color: '#38BDF8',
+                                    fontWeight: 700
+                                  }}>
+                                    <span>× {currentCount} cars =</span>
+                                    <strong style={{ color: '#6EE7B7' }}>₹{dayTotalNum > 0 ? dayTotalNum.toLocaleString('en-IN') : '0'}</strong>
+                                  </span>
+                                )}
+
+                                {isInvalid && (
+                                  <span style={{ fontSize: '0.7rem', color: '#EF4444', fontWeight: 700, whiteSpace: 'nowrap' }}>* Required</span>
+                                )}
+                              </div>
+                              {currentCount > 1 && perCarNum > 0 && (
+                                <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                                  <i className="fa-solid fa-calculator"></i>
+                                  {currentCount} cars × ₹{perCarNum.toLocaleString('en-IN')} = <strong style={{ color: '#38BDF8' }}>₹{dayTotalNum.toLocaleString('en-IN')} Day Total</strong> (added to Total Package Price)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
 
                       {/* Hotel and Driver options for every single day */}
                       <div className="form-row" style={{ marginBottom: '1rem', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
@@ -1499,20 +1946,137 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                 </div>
               </div>
 
+              {/* Live Daywise Financial Breakdown & 10% Advance Deposit Calculator */}
+              <div style={{
+                background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%)',
+                border: '1px solid rgba(99,102,241,0.4)',
+                borderRadius: 'var(--border-radius-lg)',
+                padding: '1.5rem',
+                boxShadow: 'var(--shadow-glow)'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem', borderBottom: '1px solid var(--border)', paddingBottom: '1rem', marginBottom: '1.25rem' }}>
+                  <div>
+                    <h4 style={{ margin: 0, color: '#FFF', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <i className="fa-solid fa-calculator" style={{ color: 'var(--accent-teal)' }}></i>
+                      Daywise Pricing & 10% Advance Deposit Calculation
+                    </h4>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Total package price is dynamically computed as the sum of all daywise amounts entered above.
+                    </p>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#A5B4FC', background: 'rgba(99,102,241,0.15)', padding: '0.35rem 0.75rem', borderRadius: '20px', border: '1px solid rgba(99,102,241,0.3)' }}>
+                    <i className="fa-solid fa-receipt" style={{ marginRight: '0.35rem' }}></i> {days.length} Days Configured
+                  </div>
+                </div>
+
+                {/* Daywise badges breakdown pills */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1.25rem' }}>
+                  {days.map((d, i) => {
+                    const isSet = parseFloat(d.dayPrice) > 0;
+                    return (
+                      <div key={i} style={{
+                        background: isSet ? 'rgba(56,189,248,0.12)' : 'rgba(239,68,68,0.15)',
+                        border: isSet ? '1px solid rgba(56,189,248,0.4)' : '1px solid rgba(239,68,68,0.6)',
+                        borderRadius: '6px',
+                        padding: '0.35rem 0.65rem',
+                        fontSize: '0.78rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.4rem'
+                      }}>
+                        <span style={{ color: isSet ? 'var(--text-secondary)' : '#FCA5A5' }}>Day {d.dayNumber}:</span>
+                        <strong style={{ color: isSet ? '#38BDF8' : '#F87171' }}>
+                          {isSet ? `₹${parseFloat(d.dayPrice).toLocaleString('en-IN')}` : '₹0 ⚠️ (Rate Required)'}
+                        </strong>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* 3 Metric Cards */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '1rem' }}>
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Sum Total (All Days)
+                    </div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: '#FFF', marginTop: '0.25rem' }}>
+                      ₹{(parseFloat(price) || 0).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.15), rgba(6,78,59,0.2))', border: '1px solid rgba(52,211,153,0.4)', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: '#34D399', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      10% Advance Deposit Required
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#34D399', marginTop: '0.25rem' }}>
+                      ₹{Math.round((parseFloat(price) || 0) * 0.10).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+
+                  <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)', borderRadius: '8px', padding: '1rem', textAlign: 'center' }}>
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Balance on Arrival (90%)
+                    </div>
+                    <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+                      ₹{Math.max(0, (parseFloat(price) || 0) - Math.round((parseFloat(price) || 0) * 0.10)).toLocaleString('en-IN')}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {hasMissingDays && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.4)',
+                  borderRadius: 'var(--border-radius-md)',
+                  padding: '0.85rem 1.25rem',
+                  color: '#FCA5A5',
+                  fontSize: '0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.6rem'
+                }}>
+                  <i className="fa-solid fa-circle-exclamation" style={{ color: '#EF4444', fontSize: '1.1rem', flexShrink: 0 }}></i>
+                  <div>
+                    <strong>Daywise pricing is strictly required for every day:</strong> Missing or ₹0 rate on{' '}
+                    <span style={{ color: '#FFF', fontWeight: 700 }}>
+                      {missingDays.map(d => `Day ${d.dayNumber}`).join(', ')}
+                    </span>.
+                    You must enter a rate for all {days.length} days before you can save & publish this itinerary.
+                  </div>
+                </div>
+              )}
+
               <button
                 type="submit"
                 className="btn btn-primary"
-                style={{ width: '100%', padding: '1rem', marginTop: '1rem', background: 'linear-gradient(135deg, var(--secondary), var(--accent-teal))' }}
-                disabled={saving}
+                style={{
+                  width: '100%',
+                  padding: '1rem',
+                  marginTop: '0.5rem',
+                  background: hasMissingDays 
+                    ? 'rgba(239, 68, 68, 0.2)' 
+                    : 'linear-gradient(135deg, var(--secondary), var(--accent-teal))',
+                  border: hasMissingDays ? '1px solid rgba(239, 68, 68, 0.5)' : 'none',
+                  color: hasMissingDays ? '#FCA5A5' : '#FFF',
+                  cursor: hasMissingDays ? 'not-allowed' : 'pointer',
+                  opacity: hasMissingDays ? 0.85 : 1
+                }}
+                disabled={saving || hasMissingDays}
                 id="itinerary-save-btn"
               >
                 {saving ? (
                   <>
                     <i className="fa-solid fa-spinner fa-spin"></i> Saving Itinerary Program...
                   </>
+                ) : hasMissingDays ? (
+                  <>
+                    <i className="fa-solid fa-lock" style={{ color: '#F87171', marginRight: '0.4rem' }}></i>
+                    Set Rates For All {days.length} Days to Save & Publish ({missingDays.length} Missing: {missingDays.map(d => `Day ${d.dayNumber}`).join(', ')})
+                  </>
                 ) : (
                   <>
-                    Save & Publish Itinerary <i className="fa-solid fa-circle-check"></i>
+                    Save & Publish Itinerary (₹{(parseFloat(price) || 0).toLocaleString('en-IN')}) <i className="fa-solid fa-circle-check" style={{ marginLeft: '0.4rem' }}></i>
                   </>
                 )}
               </button>

@@ -67,7 +67,7 @@ export class ItineraryModel {
     await q('DELETE FROM itinerary_days WHERE itinerary_id = $1', [itineraryId]);
   }
 
-  static async createDay({ itineraryId, dayNumber, hotelId, driverId, description, activities }, client = null) {
+  static async createDay({ itineraryId, dayNumber, hotelId, driverId, description, activities, dayPrice = 0 }, client = null) {
     const q = client ? client.query.bind(client) : query;
     let driverNameSnap = null, driverPhoneSnap = null, vehNumSnap = null, vehModelSnap = null;
     if (driverId) {
@@ -80,11 +80,12 @@ export class ItineraryModel {
         vehModelSnap = d.vehicle_model;
       }
     }
+    const cleanDayPrice = parseFloat(dayPrice) || 0.00;
     const res = await q(
-      `INSERT INTO itinerary_days (itinerary_id, day_number, hotel_id, driver_id, description, activities, driver_name_snapshot, driver_phone_snapshot, vehicle_number_snapshot, vehicle_model_snapshot)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      `INSERT INTO itinerary_days (itinerary_id, day_number, hotel_id, driver_id, description, activities, driver_name_snapshot, driver_phone_snapshot, vehicle_number_snapshot, vehicle_model_snapshot, day_price)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [itineraryId, dayNumber, hotelId || null, driverId || null, description || null, activities || null, driverNameSnap, driverPhoneSnap, vehNumSnap, vehModelSnap]
+      [itineraryId, dayNumber, hotelId || null, driverId || null, description || null, activities || null, driverNameSnap, driverPhoneSnap, vehNumSnap, vehModelSnap, cleanDayPrice]
     );
     return res.rows[0];
   }

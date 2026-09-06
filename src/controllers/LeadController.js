@@ -48,7 +48,7 @@ export class LeadController {
         );
       }
 
-      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate, action, attendedBy, attendedByName } = await request.json();
+      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate, action, attendedBy, attendedByName, vehicleCategory, vehicleCount, vehiclePreferenceDetails } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -95,13 +95,54 @@ export class LeadController {
         });
       }
 
-      // Enforce status transition constraint: Once Fleet Assigned, lead cannot revert back to New, Quoted, or Converted
+      // Enforce status transition constraints:
+      // 1. Once Fleet Assigned or Completed, lead cannot revert back to New, Quoted, or Converted
       if (['new', 'quoted', 'converted'].includes(status) && (existingLead.status === 'assigned' || existingLead.status === 'completed')) {
         await client.query('ROLLBACK');
         return NextResponse.json(
-          { error: 'Invalid Status Transition: Once Fleet is Assigned, the lead cannot be reverted back to New, Quoted, or Converted.' },
+          { error: 'Invalid Status Transition: Once Fleet is Assigned or Completed, the lead cannot be reverted back to New, Quoted, or Converted.' },
           { status: 400 }
         );
+      }
+
+      // 2. From 'new', cannot jump directly to 'completed', 'assigned', or 'converted'
+      if (existingLead.status === 'new' && ['completed', 'assigned', 'converted'].includes(status)) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `Invalid Status Transition: A new lead cannot be moved directly to "${status.toUpperCase()}". First build and price the itinerary (Quoted) and confirm with advance deposit (Converted).` },
+          { status: 400 }
+        );
+      }
+
+      // 3. From 'quoted', cannot jump directly to 'completed' or 'assigned'
+      if (existingLead.status === 'quoted' && ['completed', 'assigned'].includes(status)) {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: `Invalid Status Transition: A quoted lead cannot be moved directly to "${status.toUpperCase()}". Advance deposit must be confirmed (Converted) first.` },
+          { status: 400 }
+        );
+      }
+
+      // 4. From 'converted', cannot jump directly to 'completed' without fleet assignment
+      if (existingLead.status === 'converted' && status === 'completed') {
+        await client.query('ROLLBACK');
+        return NextResponse.json(
+          { error: 'Invalid Status Transition: A converted journey must have fleet and driver assigned before marking as Completed.' },
+          { status: 400 }
+        );
+      }
+
+      // 5. Enforce that lead cannot be marked Quoted, Converted, or Assigned without a valid priced itinerary (> 0)
+      if (status && ['quoted', 'converted', 'assigned'].includes(status)) {
+        const itin = await ItineraryModel.getByLeadId(parseInt(leadId, 10), client);
+        const itinPrice = itin ? parseFloat(itin.price) : 0;
+        if (!itin || isNaN(itinPrice) || itinPrice <= 0) {
+          await client.query('ROLLBACK');
+          return NextResponse.json(
+            { error: 'Validation Error: Cannot mark lead as Quoted, Converted, or Fleet Assigned without a valid itinerary and pricing greater than ₹0. Please build and price the itinerary first.' },
+            { status: 400 }
+          );
+        }
       }
 
       // If lead is being converted or updated and had no attendee, attribute to current session user
@@ -122,6 +163,9 @@ export class LeadController {
         numTravelers,
         status,
         startDate,
+        vehicleCategory,
+        vehicleCount,
+        vehiclePreferenceDetails,
         attendedBy: finalAttendedBy,
         attendedByName: finalAttendedByName,
         attendedAt: finalAttendedAt
@@ -179,7 +223,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, vehiclePreferenceDetails, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -195,9 +239,15 @@ export class LeadController {
         ? templateIds 
         : (templateId ? [templateId] : []);
 
-      const initialStatus = targetTemplateIds.length > 0 ? 'quoted' : 'new';
+      const initialStatus = 'new'; // All new leads start as 'new' until daywise pricing is explicitly saved
       const parsedPartnerId = partnerId ? parseInt(partnerId, 10) : null;
       const determinedSource = source || (parsedPartnerId ? 'partner' : 'direct');
+
+      // Auto-compute required vehicle count based on Sikkim capacity rules: T=4, Z=6, J=8
+      const cat = (vehicleCategory || 'T').toUpperCase();
+      const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(guestsCount / capacity);
+      const autoDetails = vehiclePreferenceDetails || `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
         partnerId: parsedPartnerId,
@@ -209,17 +259,19 @@ export class LeadController {
         startDate: startDate || null,
         source: determinedSource,
         packageName,
-        vehicleType,
+        vehicleType: vehicleType || `${cat}-Series (${capacity}-Seater)`,
+        vehicleCategory: cat,
+        vehicleCount: computedVehicleCount,
+        vehiclePreferenceDetails: autoDetails,
         notes,
         attendedBy: session.adminId,
         attendedByName: session.name,
         attendedAt: new Date()
       }, client);
 
-      // Generate itinerary if templates selected (supports multi-region)
+      // Generate itinerary blueprint if templates selected (supports multi-region)
       if (targetTemplateIds.length > 0) {
         let combinedDays = [];
-        let totalPrice = 0;
         let regionNames = [];
 
         for (const tId of targetTemplateIds) {
@@ -228,7 +280,6 @@ export class LeadController {
             if (!regionNames.includes(template.region)) {
               regionNames.push(template.region);
             }
-            totalPrice += (parseFloat(template.estimated_price) || 0);
 
             let templateDays = [];
             if (typeof template.days === 'string') {
@@ -248,7 +299,8 @@ export class LeadController {
                   hotelId: null,
                   driverId: null,
                   description: d?.description || '',
-                  activities: d?.activities || ''
+                  activities: d?.activities || '',
+                  dayPrice: 0.00
                 });
               });
             }
@@ -257,10 +309,11 @@ export class LeadController {
 
         if (combinedDays.length > 0) {
           const regionsStr = regionNames.join(' & ');
+
           const itinerary = await ItineraryModel.create({
             leadId: lead.id,
             title: `${regionsStr} Multi-Region Tour for ${clientName}`,
-            price: totalPrice,
+            price: 0.00,
             totalDays: combinedDays.length,
             status: 'draft'
           }, client);
@@ -272,7 +325,8 @@ export class LeadController {
               hotelId: null,
               driverId: null,
               description: day.description || '',
-              activities: day.activities || ''
+              activities: day.activities || '',
+              dayPrice: 0.00
             }, client);
           }
         }
@@ -300,7 +354,7 @@ export class LeadController {
 
   static async publicCreateLead(request) {
     try {
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, packageName, vehicleType, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -310,6 +364,10 @@ export class LeadController {
       }
 
       const travelersCount = parseInt(numTravelers, 10) || 1;
+      const cat = (vehicleCategory || 'T').toUpperCase();
+      const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(travelersCount / capacity);
+      const autoDetails = `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
         partnerId: null,
@@ -321,7 +379,10 @@ export class LeadController {
         startDate: startDate || null,
         source: 'website',
         packageName,
-        vehicleType,
+        vehicleType: vehicleType || `${cat}-Series (${capacity}-Seater)`,
+        vehicleCategory: cat,
+        vehicleCount: computedVehicleCount,
+        vehiclePreferenceDetails: autoDetails,
         notes
       });
 
@@ -348,7 +409,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, startDate, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -358,6 +419,10 @@ export class LeadController {
       }
 
       const travelersCount = parseInt(numTravelers, 10) || 1;
+      const cat = (vehicleCategory || 'T').toUpperCase();
+      const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(travelersCount / capacity);
+      const autoDetails = `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
         partnerId: session.partnerId,
@@ -368,6 +433,10 @@ export class LeadController {
         status: 'new',
         startDate: startDate || null,
         source: 'partner',
+        vehicleType: `${cat}-Series (${capacity}-Seater)`,
+        vehicleCategory: cat,
+        vehicleCount: computedVehicleCount,
+        vehiclePreferenceDetails: autoDetails,
         notes
       });
 

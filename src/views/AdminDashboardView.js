@@ -258,6 +258,7 @@ export default function AdminDashboard() {
   const [leadsSearch, setLeadsSearch] = useState('');
   const [leadsFilterStatus, setLeadsFilterStatus] = useState('all');
   const [leadsFilterSource, setLeadsFilterSource] = useState('all');
+  const [leadsFilterItinerary, setLeadsFilterItinerary] = useState('all');
 
   // Real-time Lead Radar & Sound/Voice Alert states
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -438,6 +439,8 @@ export default function AdminDashboard() {
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleModel, setVehicleModel] = useState('');
   const [vehicleOwner, setVehicleOwner] = useState('');
+  const [driverCategory, setDriverCategory] = useState('T'); // 'T', 'Z', 'J'
+  const [driverCapacity, setDriverCapacity] = useState(4); // default 4 for T
   const [isDriverOwner, setIsDriverOwner] = useState(false);
   const [editingDriver, setEditingDriver] = useState(null);
 
@@ -449,6 +452,7 @@ export default function AdminDashboard() {
   const [newLeadPhone, setNewLeadPhone] = useState('');
   const [newLeadDates, setNewLeadDates] = useState('');
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
+  const [newLeadVehicleCategory, setNewLeadVehicleCategory] = useState(''); // default empty: prompt user to select
   const [newLeadStartDate, setNewLeadStartDate] = useState('');
   const [selectedWalkInTemplateIds, setSelectedWalkInTemplateIds] = useState([]);
   const [isWalkInMultiDropdownOpen, setIsWalkInMultiDropdownOpen] = useState(false);
@@ -1129,9 +1133,7 @@ export default function AdminDashboard() {
 
   const getReceiptWhatsAppLink = (j) => {
     if (!j.lead || !j.itinerary) return '#';
-    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-      ? window.location.origin
-      : (process.env.NEXT_PUBLIC_APP_URL || 'https://www.sandeshtravels.in');
+    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' && window.location && window.location.origin ? window.location.origin : 'https://www.sandeshtravels.in');
     const guestItineraryUrl = `${baseDomain.replace(/\/$/, '')}/itinerary/${j.itinerary.id}`;
     
     // Find the first assigned driver details in the itinerary days
@@ -1142,7 +1144,7 @@ export default function AdminDashboard() {
       let message = `Hi ${j.lead.client_name}, your upcoming Sandesh Travels booking is confirmed! 🚗✨\n\n`;
       message += `• Route: ${j.itinerary.title}\n`;
       message += `• Driver & Vehicle details are being finalized. We will notify you as soon as they are assigned.\n\n`;
-      message += `You can view your day-by-day program details here:\n👉 ${guestItineraryUrl}`;
+      message += `You can view your day-by-day program details here:\n${guestItineraryUrl}`;
       const cleanPhone = j.lead.client_phone.replace(/\D/g, '');
       return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
     }
@@ -1151,7 +1153,7 @@ export default function AdminDashboard() {
     message += `• Driver Name: ${assignedDayWithDriver.driver_name}\n`;
     message += `• Driver Contact: ${assignedDayWithDriver.driver_phone}\n`;
     message += `• Vehicle: ${assignedDayWithDriver.vehicle_model} (${assignedDayWithDriver.vehicle_number || 'N/A'})\n\n`;
-    message += `Please click the link below to view your full day-by-day program and hotel check-in details:\n👉 ${guestItineraryUrl}\n\nHave a safe and wonderful trip!`;
+    message += `Please click the link below to view your full day-by-day program and hotel check-in details:\n${guestItineraryUrl}\n\nHave a safe and wonderful trip!`;
     
     const cleanPhone = j.lead.client_phone.replace(/\D/g, '');
     return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
@@ -1160,9 +1162,7 @@ export default function AdminDashboard() {
   const getBookingConfirmationWhatsAppLink = (lead) => {
     if (!lead || !lead.client_phone) return '#';
     const cleanPhone = lead.client_phone.replace(/\D/g, '');
-    const baseDomain = (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')
-      ? window.location.origin
-      : (process.env.NEXT_PUBLIC_APP_URL || 'https://crm.sandeshtravels.in');
+    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' && window.location && window.location.origin ? window.location.origin : 'https://www.sandeshtravels.in');
     
     const itineraryLink = lead.itinerary_id 
       ? `${baseDomain.replace(/\/$/, '')}/itinerary/${lead.itinerary_id}`
@@ -1194,11 +1194,65 @@ export default function AdminDashboard() {
     msg += `\n🚗 *FLEET & DRIVER ASSIGNMENT:*\n`;
     msg += `Our operations team is currently finalizing your dedicated vehicle and driver allocations. Your driver details (Name, Contact Number & Vehicle Registration) will be updated on your live itinerary link shortly before your arrival.\n\n`;
     msg += `🗺️ *VIEW LIVE ITINERARY & STAYS:*\n`;
-    msg += `👉 ${itineraryLink}\n\n`;
+    msg += `${itineraryLink}\n\n`;
     msg += `Thank you for choosing *Sandesh Travels*. We look forward to hosting you on an unforgettable journey! 🌄\n\n`;
     msg += `Warm regards,\n*Sandesh Travels Team*`;
 
     return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`;
+  };
+
+  const getQuotationWhatsAppLink = (lead) => {
+    if (!lead || !lead.client_phone) return '#';
+    const cleanPhone = lead.client_phone.replace(/\D/g, '');
+    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== 'undefined' && window.location && window.location.origin ? window.location.origin : 'https://www.sandeshtravels.in');
+    
+    const itineraryLink = lead.itinerary_id 
+      ? `${baseDomain.replace(/\/$/, '')}/itinerary/${lead.itinerary_id}`
+      : `${baseDomain.replace(/\/$/, '')}/itinerary/${lead.id}`;
+    
+    const totalPrice = parseFloat(lead.itinerary_price) || 0;
+    const advanceRequired = Math.round(totalPrice * 0.1);
+    const formattedStartDate = lead.start_date
+      ? new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : (lead.travel_dates || 'Flexible');
+
+    const vCat = (lead.vehicle_category || 'T').toUpperCase();
+    const vCount = lead.vehicle_count || (lead.num_travelers ? Math.ceil(lead.num_travelers / (vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4)) : 1);
+    const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+
+    let msg = `*TOUR QUOTATION & ITINERARY – Sandesh Travels* 🏔️✈️\n\n`;
+    msg += `Dear *${lead.client_name}*,\n\n`;
+    msg += `Greetings from *Sandesh Travels*!\n`;
+    msg += `We have prepared your customized day-by-day travel plan and price quotation.\n\n`;
+    msg += `📋 *QUOTATION DETAILS:*\n`;
+    if (lead.itinerary_title || lead.package_name) {
+      msg += `• *Tour Plan:* ${lead.itinerary_title || lead.package_name}\n`;
+    }
+    if (lead.total_days) {
+      msg += `• *Duration:* ${lead.total_days} Days / ${Math.max(1, lead.total_days - 1)} Nights\n`;
+    }
+    msg += `• *Journey Start Date:* ${formattedStartDate}\n`;
+    msg += `• *Guests:* ${lead.num_travelers || 1} Traveler(s)\n`;
+    msg += `• *Vehicle Allocated:* ${vCount}x ${vLabel}\n`;
+    if (totalPrice > 0) {
+      msg += `• *Total Package Cost:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
+      msg += `• *10% Advance Deposit to Confirm:* Rs. ${advanceRequired.toLocaleString('en-IN')}\n`;
+    }
+    msg += `\n🗺️ *VIEW COMPLETE DAY-BY-DAY ITINERARY & STAYS:*\n`;
+    msg += `${itineraryLink}\n\n`;
+    msg += `You can review the daywise program, sightseeing spots, and hotels on the link above. To confirm your booking, please submit the 10% advance deposit via the portal or reach out to us directly.\n\n`;
+    msg += `Warm regards,\n*Sandesh Travels Team*`;
+
+    return `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(msg)}`;
+  };
+
+  const handleSendQuotationWhatsApp = async (lead) => {
+    const url = getQuotationWhatsAppLink(lead);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    // If the lead was still 'new', update it to 'quoted'
+    if (lead.status === 'new') {
+      handleStatusChange(lead.id, 'quoted');
+    }
   };
 
   const isDriverFreeOnDate = (d, leadId, startDate, dayNumber) => {
@@ -1209,13 +1263,14 @@ export default function AdminDashboard() {
   };
 
   const getDriverOptionTextForDay = (d, leadId, startDate, dayNumber) => {
-    const defaultText = `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
+    const catTag = d.vehicle_category ? `[${d.vehicle_category}-${d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)}P] ` : '';
+    const defaultText = `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
     if (!startDate) return defaultText;
     
     const targetDateStr = getIsoDateForDay(startDate, dayNumber);
     const booking = d.bookings?.find(b => b.date === targetDateStr && String(b.lead_id) !== String(leadId) && (b.lead_status === 'converted' || b.lead_status === 'assigned'));
     if (booking) {
-      return `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${booking.client_name}`;
+      return `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${booking.client_name}`;
     }
     return defaultText;
   };
@@ -1231,7 +1286,8 @@ export default function AdminDashboard() {
   };
 
   const getDriverOptionTextForJourney = (d, leadId, startDate, totalDays) => {
-    const defaultText = `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
+    const catTag = d.vehicle_category ? `[${d.vehicle_category}-${d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)}P] ` : '';
+    const defaultText = `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'})`;
     if (!startDate || !totalDays) return defaultText;
     
     const conflictingDates = [];
@@ -1244,7 +1300,7 @@ export default function AdminDashboard() {
     }
     
     if (conflictingDates.length > 0) {
-      return `${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${conflictingDates.join(', ')}`;
+      return `${catTag}${d.driver_name} (${d.vehicle_model || 'No Vehicle'} - ${d.vehicle_number || 'N/A'}) ⚠️ Busy: ${conflictingDates.join(', ')}`;
     }
     return defaultText;
   };
@@ -1410,6 +1466,49 @@ export default function AdminDashboard() {
   const handleStatusChange = async (leadId, newStatus) => {
     setError('');
     setSuccess('');
+
+    const targetLead = leads.find(l => String(l.id) === String(leadId));
+    if (targetLead) {
+      const currentStatus = targetLead.status;
+      const hasValidPrice = targetLead.itinerary_id && parseFloat(targetLead.itinerary_price) > 0;
+
+      // 1. Once completed, no changes allowed
+      if (currentStatus === 'completed') {
+        setError('Completed journeys are archived and cannot be changed.');
+        return;
+      }
+
+      // 2. From 'assigned' or 'completed', cannot revert to new, quoted, converted
+      if (['new', 'quoted', 'converted'].includes(newStatus) && (currentStatus === 'assigned' || currentStatus === 'completed')) {
+        setError('Invalid Status Transition: Once Fleet is Assigned or Completed, the lead cannot be reverted back.');
+        return;
+      }
+
+      // 3. From 'new', cannot jump directly to 'completed', 'assigned', or 'converted'
+      if (currentStatus === 'new' && ['completed', 'assigned', 'converted'].includes(newStatus)) {
+        setError(`Invalid Status Transition: Cannot jump directly from "New" to "${newStatus.toUpperCase()}". First build & price the itinerary (Quoted) and confirm advance deposit (Converted).`);
+        return;
+      }
+
+      // 4. From 'quoted', cannot jump directly to 'completed' or 'assigned'
+      if (currentStatus === 'quoted' && ['completed', 'assigned'].includes(newStatus)) {
+        setError(`Invalid Status Transition: Cannot move directly from "Quoted" to "${newStatus.toUpperCase()}". Advance deposit (10%) must be verified and converted first.`);
+        return;
+      }
+
+      // 5. From 'converted', cannot jump directly to 'completed' without fleet assignment
+      if (currentStatus === 'converted' && newStatus === 'completed') {
+        setError('Invalid Status Transition: Fleet and driver must be assigned to the journey before marking as Completed.');
+        return;
+      }
+
+      // 6. Strict validation: cannot change status to quoted, converted, or assigned without a valid priced itinerary
+      if (['quoted', 'converted', 'assigned'].includes(newStatus) && !hasValidPrice) {
+        setError('Validation Error: Cannot mark lead as Quoted, Converted, or Fleet Assigned without a valid priced itinerary (Amount > ₹0). Please click "Build Itinerary" and configure daywise pricing first.');
+        return;
+      }
+    }
+
     setActionLoading(true);
     try {
       const res = await fetch('/api/admin/leads', {
@@ -1678,7 +1777,9 @@ export default function AdminDashboard() {
         driverPhone,
         vehicleNumber,
         vehicleModel,
-        vehicleOwner
+        vehicleOwner,
+        vehicleCategory: driverCategory || 'T',
+        seatingCapacity: parseInt(driverCapacity, 10) || (driverCategory === 'J' ? 8 : driverCategory === 'Z' ? 6 : 4)
       };
       if (editingDriver) {
         body.id = editingDriver.id;
@@ -1697,6 +1798,8 @@ export default function AdminDashboard() {
         setVehicleNumber('');
         setVehicleModel('');
         setVehicleOwner('');
+        setDriverCategory('T');
+        setDriverCapacity(4);
         setIsDriverOwner(false);
         setEditingDriver(null);
         fetchDashboardData();
@@ -1718,6 +1821,9 @@ export default function AdminDashboard() {
     setVehicleNumber(d.vehicle_number || '');
     setVehicleModel(d.vehicle_model || '');
     setVehicleOwner(d.vehicle_owner || '');
+    const cat = d.vehicle_category || 'T';
+    setDriverCategory(cat);
+    setDriverCapacity(d.seating_capacity || (cat === 'J' ? 8 : cat === 'Z' ? 6 : 4));
     const isSelf = d.vehicle_owner && (d.vehicle_owner.includes('Self-Owned') || d.vehicle_owner === d.driver_name);
     setIsDriverOwner(!!isSelf);
     const driverForm = document.getElementById('driver-form-section');
@@ -1733,6 +1839,8 @@ export default function AdminDashboard() {
     setVehicleNumber('');
     setVehicleModel('');
     setVehicleOwner('');
+    setDriverCategory('T');
+    setDriverCapacity(4);
     setIsDriverOwner(false);
   };
 
@@ -1765,7 +1873,6 @@ export default function AdminDashboard() {
     setEditingTemplate(null);
     setTemplateName('');
     setTemplateRegion('North');
-    setTemplatePrice(0);
     setTemplateTotalDays(1);
     setTemplateDays([{ dayNumber: 1, description: '', activities: '' }]);
     setError('');
@@ -1778,12 +1885,17 @@ export default function AdminDashboard() {
     setEditingTemplate(t);
     setTemplateName(t.name);
     setTemplateRegion(t.region);
-    setTemplatePrice(parseFloat(t.estimated_price) || 0);
-    setTemplateTotalDays(parseInt(t.total_days, 10) || 1);
     
     // Parse days
-    const parsedDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
-    setTemplateDays(parsedDays || [{ dayNumber: 1, description: '', activities: '' }]);
+    const rawDays = typeof t.days === 'string' ? JSON.parse(t.days) : t.days;
+    const parsedDays = (rawDays || [{ dayNumber: 1, description: '', activities: '' }]).map((d, idx) => ({
+      dayNumber: d.dayNumber || idx + 1,
+      description: d.description || '',
+      activities: d.activities || ''
+    }));
+    
+    setTemplateDays(parsedDays);
+    setTemplateTotalDays(parseInt(t.total_days, 10) || parsedDays.length || 1);
     setError('');
     setSuccess('');
     setShowTemplateModal(true);
@@ -1831,7 +1943,7 @@ export default function AdminDashboard() {
     const payload = {
       name: templateName,
       region: templateRegion,
-      estimatedPrice: templatePrice,
+      estimatedPrice: 0,
       totalDays: templateTotalDays,
       days: templateDays
     };
@@ -1925,7 +2037,8 @@ export default function AdminDashboard() {
           startDate: newLeadStartDate || null,
           templateId: (selectedWalkInTemplateIds && selectedWalkInTemplateIds.length > 0) ? selectedWalkInTemplateIds[0] : null,
           templateIds: selectedWalkInTemplateIds,
-          partnerId: newLeadPartnerId || null
+          partnerId: newLeadPartnerId || null,
+          vehicleCategory: newLeadVehicleCategory || 'T'
         })
       });
 
@@ -1942,6 +2055,7 @@ export default function AdminDashboard() {
         setNewLeadPhone('');
         setNewLeadDates('');
         setNewLeadTravelers(1);
+        setNewLeadVehicleCategory('');
         setNewLeadStartDate('');
         setSelectedWalkInTemplateIds([]);
         setIsWalkInMultiDropdownOpen(false);
@@ -2020,6 +2134,7 @@ export default function AdminDashboard() {
     const query = leadsSearch.toLowerCase();
     const matchesSearch = lead.client_name.toLowerCase().includes(query) || 
                           lead.client_phone.includes(query) ||
+                          (lead.itinerary_title && lead.itinerary_title.toLowerCase().includes(query)) ||
                           (lead.partner_name && lead.partner_name.toLowerCase().includes(query)) ||
                           (lead.attended_by_name && lead.attended_by_name.toLowerCase().includes(query)) ||
                           (srcInfo.pkg && srcInfo.pkg.toLowerCase().includes(query)) ||
@@ -2030,7 +2145,11 @@ export default function AdminDashboard() {
       (leadsFilterAttendee === 'unattended' && !lead.attended_by && !lead.attended_by_name) ||
       (leadsFilterAttendee === 'mine' && (lead.attended_by === admin?.id || (lead.attended_by_name && lead.attended_by_name.toLowerCase() === (admin?.name || '').toLowerCase()))) ||
       (String(lead.attended_by) === String(leadsFilterAttendee));
-    return matchesSearch && matchesStatus && matchesSource && matchesAttendee;
+    const hasPricedItin = !!lead.itinerary_id && parseFloat(lead.itinerary_price) > 0;
+    const matchesItinerary = leadsFilterItinerary === 'all' ||
+      (leadsFilterItinerary === 'configured' && hasPricedItin) ||
+      (leadsFilterItinerary === 'pending' && !hasPricedItin);
+    return matchesSearch && matchesStatus && matchesSource && matchesAttendee && matchesItinerary;
   });
 
   // Calculate high level metrics
@@ -2423,7 +2542,7 @@ export default function AdminDashboard() {
 
         {/* Dynamic Panels */}
         {activeTab === 'leads' && (
-          <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <section className="glass-card animate-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', minWidth: 0, width: '100%', overflow: 'hidden' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
               <h2>Lead CRM Registry</h2>
               
@@ -2466,6 +2585,17 @@ export default function AdminDashboard() {
 
                 <select
                   className="form-control"
+                  style={{ width: '155px', padding: '0.5rem' }}
+                  value={leadsFilterItinerary}
+                  onChange={(e) => setLeadsFilterItinerary(e.target.value)}
+                >
+                  <option value="all">All Itineraries</option>
+                  <option value="configured">✅ Itinerary Ready</option>
+                  <option value="pending">⏳ Itinerary Pending</option>
+                </select>
+
+                <select
+                  className="form-control"
                   style={{ width: '175px', padding: '0.5rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
                   value={leadsFilterAttendee}
                   onChange={(e) => setLeadsFilterAttendee(e.target.value)}
@@ -2490,16 +2620,16 @@ export default function AdminDashboard() {
                 <p>No matching traveler inquiries found.</p>
               </div>
             ) : (
-              <div className="table-container">
-                <table className="custom-table">
+              <div className="table-container" style={{ width: '100%', overflowX: 'auto', WebkitOverflowScrolling: 'touch', minWidth: 0 }}>
+                <table className="custom-table" style={{ minWidth: '1080px', width: '100%' }}>
                   <thead>
                     <tr>
-                      <th>Lead Details</th>
-                      <th>Traveler Route & Date</th>
-                      <th>Lead Source</th>
-                      <th>Attendee / Staff</th>
-                      <th>Status Tracking</th>
-                      <th>Actions</th>
+                      <th style={{ width: '170px', minWidth: '160px' }}>Lead Details</th>
+                      <th style={{ width: '190px', minWidth: '180px' }}>Traveler Route & Date</th>
+                      <th style={{ width: '130px', minWidth: '130px' }}>Lead Source</th>
+                      <th style={{ width: '140px', minWidth: '140px' }}>Attendee / Staff</th>
+                      <th style={{ width: '230px', minWidth: '220px' }}>Status Tracking</th>
+                      <th style={{ width: '220px', minWidth: '200px', paddingRight: '0.75rem' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2517,7 +2647,58 @@ export default function AdminDashboard() {
                               {getCleanTravelDates(lead)}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{lead.num_travelers} guest(s)</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                            <span>{lead.num_travelers} guest(s)</span>
+                            <span 
+                              style={{
+                                fontSize: '0.7rem',
+                                padding: '0.05rem 0.35rem',
+                                borderRadius: '3px',
+                                fontWeight: '600',
+                                background: (lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.15)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.15)' : 'rgba(16,185,129,0.15)'),
+                                color: (lead.vehicle_category === 'J' ? '#c084fc' : lead.vehicle_category === 'Z' ? '#fb923c' : '#34d399'),
+                                border: `1px solid ${lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.3)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
+                              }}
+                              title={lead.vehicle_preference_details || `${lead.vehicle_count || 1}x ${lead.vehicle_category || 'T'}-Series (${lead.vehicle_category === 'J' ? '8-Seater' : lead.vehicle_category === 'Z' ? '6-Seater' : '4-Seater'})`}
+                            >
+                              🚗 {lead.vehicle_count || 1}x {lead.vehicle_category || 'T'}
+                            </span>
+                          </div>
+                          {lead.itinerary_id && parseFloat(lead.itinerary_price) > 0 ? (
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.35rem',
+                              background: 'rgba(56, 189, 248, 0.12)',
+                              border: '1px solid rgba(56, 189, 248, 0.35)',
+                              color: '#38BDF8',
+                              fontSize: '0.72rem',
+                              fontWeight: 600,
+                              padding: '0.18rem 0.5rem',
+                              borderRadius: '4px',
+                              maxWidth: '190px'
+                            }} title={`${lead.itinerary_title || 'Custom Tour'} (${lead.total_days || 0} Days • ₹${Number(lead.itinerary_price).toLocaleString('en-IN')})`}>
+                              <i className="fa-solid fa-map-location-dot" style={{ color: '#38BDF8', fontSize: '0.75rem' }}></i>
+                              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {lead.total_days ? `${lead.total_days}D: ` : ''}{lead.itinerary_title || 'Itinerary Ready'}
+                              </span>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.3rem',
+                              background: 'rgba(245, 158, 11, 0.1)',
+                              border: '1px solid rgba(245, 158, 11, 0.25)',
+                              color: '#FBBF24',
+                              fontSize: '0.7rem',
+                              fontWeight: 500,
+                              padding: '0.12rem 0.45rem',
+                              borderRadius: '4px'
+                            }}>
+                              <i className="fa-regular fa-clock" style={{ fontSize: '0.7rem' }}></i> {lead.itinerary_id ? 'Draft (₹0 - Pricing Needed)' : 'No Itinerary Yet'}
+                            </div>
+                          )}
                         </td>
                         <td>
                           {srcInfo.type === 'partner' ? (
@@ -2633,25 +2814,76 @@ export default function AdminDashboard() {
                                   onChange={(e) => handleStatusChange(lead.id, e.target.value)}
                                   disabled={actionLoading}
                                   style={{ 
+                                    width: '100px',
+                                    maxWidth: '100px',
                                     background: 'var(--bg-surface-elevated)', 
                                     border: '1px solid var(--border)',
                                     color: 'var(--text-primary)',
                                     borderRadius: '4px',
-                                    padding: '0.2rem',
-                                    fontSize: '0.8rem'
+                                    padding: '0.2rem 0.35rem',
+                                    fontSize: '0.78rem',
+                                    cursor: 'pointer'
                                   }}
                                 >
-                                  <option value="new" disabled={lead.status === 'assigned' || lead.status === 'completed'}>New</option>
-                                  <option value="quoted" disabled={lead.status === 'assigned' || lead.status === 'completed'}>Quoted</option>
-                                  <option value="converted" disabled={lead.status === 'assigned' || lead.status === 'completed'}>Converted</option>
-                                  <option value="assigned">Fleet Assigned</option>
-                                  <option value="completed">Completed</option>
+                                  <option value="new" disabled={lead.status !== 'new'}>New</option>
+                                  <option 
+                                    value="quoted" 
+                                    disabled={lead.status === 'assigned' || lead.status === 'completed' || !lead.itinerary_id || parseFloat(lead.itinerary_price) <= 0}
+                                  >
+                                    Quoted
+                                  </option>
+                                  <option 
+                                    value="converted" 
+                                    disabled={lead.status === 'new' || lead.status === 'assigned' || lead.status === 'completed' || !lead.itinerary_id || parseFloat(lead.itinerary_price) <= 0}
+                                  >
+                                    Converted
+                                  </option>
+                                  <option 
+                                    value="assigned" 
+                                    disabled={lead.status === 'new' || lead.status === 'quoted' || lead.status === 'completed' || !lead.itinerary_id || parseFloat(lead.itinerary_price) <= 0}
+                                  >
+                                    Assigned
+                                  </option>
+                                  <option 
+                                    value="completed" 
+                                    disabled={lead.status === 'new' || lead.status === 'quoted' || lead.status === 'converted'}
+                                  >
+                                    Completed
+                                  </option>
                                   <option value="cancelled">Cancelled</option>
                                 </select>
                               )}
                             </div>
 
-                            {/* Advance Deposit Status Tracking */}
+                            {/* Itinerary & Advance Deposit Status Tracking */}
+                            {lead.itinerary_id && parseFloat(lead.itinerary_price) > 0 ? (
+                              <div style={{
+                                background: 'rgba(56,189,248,0.1)',
+                                border: '1px solid rgba(56,189,248,0.3)',
+                                borderRadius: '4px',
+                                padding: '0.2rem 0.45rem',
+                                fontSize: '0.73rem',
+                                color: '#38BDF8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.3rem',
+                                fontWeight: 600
+                              }}>
+                                <i className="fa-solid fa-circle-check" style={{ color: '#38BDF8' }}></i>
+                                <span>Itinerary Ready: ₹{Number(lead.itinerary_price).toLocaleString('en-IN')}</span>
+                              </div>
+                            ) : (
+                              <div style={{
+                                fontSize: '0.7rem',
+                                color: '#F87171',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                              }}>
+                                <i className="fa-solid fa-circle-xmark"></i> {lead.itinerary_id ? 'Itinerary Incomplete (₹0)' : 'Itinerary Not Configured'}
+                              </div>
+                            )}
+
                             {lead.payment_status === 'pending_verification' ? (
                               <div style={{
                                 background: 'rgba(245,158,11,0.15)',
@@ -2693,8 +2925,8 @@ export default function AdminDashboard() {
                             )}
                           </div>
                         </td>
-                        <td style={{ minWidth: '220px' }}>
-                          <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <td style={{ width: '240px', minWidth: '240px', paddingRight: '1rem', verticalAlign: 'middle' }}>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
                             {lead.payment_status === 'pending_verification' && (
                               <button
                                 type="button"
@@ -2722,21 +2954,84 @@ export default function AdminDashboard() {
                             )}
 
                             {(lead.status === 'new' || lead.status === 'quoted') && (
-                              <Link 
-                                href={`/admin/itinerary/${lead.id}`} 
-                                className="btn btn-primary"
-                                style={{ 
-                                  padding: '0.35rem 0.65rem', 
-                                  fontSize: '0.75rem', 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  whiteSpace: 'nowrap',
-                                  fontWeight: '600'
-                                }}
-                              >
-                                <i className="fa-solid fa-wand-magic-sparkles"></i> Build Itinerary
-                              </Link>
+                              (lead.itinerary_id && parseFloat(lead.itinerary_price) > 0) ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSendQuotationWhatsApp(lead)}
+                                    className="btn btn-secondary"
+                                    style={{ 
+                                      padding: '0.35rem 0.55rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.3rem', 
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: '600',
+                                      background: 'rgba(37, 211, 102, 0.12)',
+                                      color: '#25D366',
+                                      borderColor: 'rgba(37, 211, 102, 0.4)'
+                                    }}
+                                    title="Send Official Quotation & Itinerary Link to Guest via WhatsApp"
+                                  >
+                                    <i className="fa-brands fa-whatsapp fa-lg"></i> Send Quote
+                                  </button>
+                                  <Link 
+                                    href={`/admin/itinerary/${lead.id}`} 
+                                    className="btn btn-secondary"
+                                    style={{ 
+                                      padding: '0.35rem 0.55rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.3rem', 
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: '600',
+                                      background: 'rgba(56, 189, 248, 0.15)',
+                                      color: '#38BDF8',
+                                      borderColor: 'rgba(56, 189, 248, 0.4)'
+                                    }}
+                                    title={`Edit existing itinerary: ${lead.itinerary_title || ''}`}
+                                  >
+                                    <i className="fa-solid fa-pen-to-square"></i> Edit
+                                  </Link>
+                                  <Link
+                                    href={`/itinerary/${lead.itinerary_id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="btn btn-outline"
+                                    style={{ 
+                                      padding: '0.35rem 0.45rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.25rem' 
+                                    }}
+                                    title="View Guest Itinerary"
+                                  >
+                                    <i className="fa-solid fa-arrow-up-right-from-square"></i>
+                                  </Link>
+                                </>
+                              ) : (
+                                  <Link 
+                                    href={`/admin/itinerary/${lead.id}`} 
+                                    className="btn btn-primary"
+                                    style={{ 
+                                      padding: '0.35rem 0.65rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.3rem', 
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: '700',
+                                      background: 'linear-gradient(135deg, #10B981, #06B6D4)',
+                                      boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                                    }}
+                                    title={`Build and price custom itinerary for ${lead.client_name}`}
+                                  >
+                                    <i className="fa-solid fa-wand-magic-sparkles"></i> Build Itinerary
+                                  </Link>
+                              )
                             )}
 
                             {lead.status === 'quoted' && lead.payment_status !== 'pending_verification' && lead.payment_status !== 'advance_paid' && (
@@ -4038,12 +4333,46 @@ export default function AdminDashboard() {
                 </div>
                 <div className="form-row">
                   <div className="form-group">
+                    <label htmlFor="v-category">Sikkim Vehicle Category</label>
+                    <select
+                      id="v-category"
+                      className="form-control"
+                      value={driverCategory}
+                      onChange={(e) => {
+                        const cat = e.target.value;
+                        setDriverCategory(cat);
+                        const defaultCap = cat === 'J' ? 8 : cat === 'Z' ? 6 : 4;
+                        setDriverCapacity(defaultCap);
+                      }}
+                      style={{ background: 'var(--bg-surface)' }}
+                    >
+                      <option value="T">T-Series (Hatchback/Sedan - Max 4 Pax)</option>
+                      <option value="Z">Z-Series (MUV/Luxury SUV - Max 6 Pax)</option>
+                      <option value="J">J-Series (Maxi Cab/Full SUV - Max 8 Pax)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="v-capacity">Seating Capacity (Pax)</label>
+                    <input
+                      type="number"
+                      id="v-capacity"
+                      className="form-control"
+                      min="1"
+                      max="20"
+                      value={driverCapacity}
+                      onChange={(e) => setDriverCapacity(parseInt(e.target.value, 10) || 1)}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="form-row">
+                  <div className="form-group">
                     <label htmlFor="v-num">Vehicle Plate Number</label>
                     <input
                       type="text"
                       id="v-num"
                       className="form-control"
-                      placeholder="e.g. Ba 2 Pa 4567"
+                      placeholder="e.g. SK-01-T-1234 / Ba 2 Pa 4567"
                       value={vehicleNumber}
                       onChange={(e) => setVehicleNumber(e.target.value)}
                     />
@@ -4054,7 +4383,7 @@ export default function AdminDashboard() {
                       type="text"
                       id="v-model"
                       className="form-control"
-                      placeholder="e.g. Scorpio SUV"
+                      placeholder="e.g. WagonR (T) / Innova (Z) / Sumo (J)"
                       value={vehicleModel}
                       onChange={(e) => setVehicleModel(e.target.value)}
                     />
@@ -4143,8 +4472,23 @@ export default function AdminDashboard() {
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{d.driver_phone}</div>
                           </td>
                           <td>
-                            <div>{d.vehicle_model || 'N/A'}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{d.vehicle_number || 'N/A'}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                              <span 
+                                style={{
+                                  fontSize: '0.72rem',
+                                  padding: '0.15rem 0.45rem',
+                                  borderRadius: '4px',
+                                  fontWeight: '700',
+                                  background: (d.vehicle_category === 'J' ? 'rgba(168,85,247,0.15)' : d.vehicle_category === 'Z' ? 'rgba(251,146,60,0.15)' : 'rgba(16,185,129,0.15)'),
+                                  color: (d.vehicle_category === 'J' ? '#c084fc' : d.vehicle_category === 'Z' ? '#fb923c' : '#34d399'),
+                                  border: `1px solid ${d.vehicle_category === 'J' ? 'rgba(168,85,247,0.3)' : d.vehicle_category === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
+                                }}
+                              >
+                                {d.vehicle_category || 'T'}-Series ({d.seating_capacity || (d.vehicle_category === 'J' ? 8 : d.vehicle_category === 'Z' ? 6 : 4)} Pax)
+                              </span>
+                              <span style={{ fontWeight: '500', color: '#FFF' }}>{d.vehicle_model || 'Standard'}</span>
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>{d.vehicle_number || 'No Plate Assigned'}</div>
                             {d.vehicle_owner && (
                               <div style={{ fontSize: '0.75rem', color: '#38bdf8', marginTop: '0.15rem' }}>
                                 <i className="fa-solid fa-building-user" style={{ marginRight: '0.3rem' }}></i> {d.vehicle_owner}
@@ -4212,7 +4556,6 @@ export default function AdminDashboard() {
                       <th>Package Name</th>
                       <th>Region</th>
                       <th>Duration</th>
-                      <th>Price</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -4239,9 +4582,6 @@ export default function AdminDashboard() {
                         </td>
                         <td>
                           <strong>{t.total_days} Day(s)</strong>
-                        </td>
-                        <td>
-                          <strong style={{ color: 'var(--primary)' }}>Rs. {t.estimated_price}</strong>
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -5711,6 +6051,45 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
+              {/* Preferred Sikkim Vehicle Category & Dynamic Capacity Calculator */}
+              <div className="form-group" style={{ background: 'rgba(255,255,255,0.02)', padding: '0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                  <label style={{ fontWeight: '600', color: '#FFF', margin: 0 }}>Client Preferred Vehicle Category</label>
+                  {newLeadVehicleCategory ? (() => {
+                    const cap = newLeadVehicleCategory === 'J' ? 8 : newLeadVehicleCategory === 'Z' ? 6 : 4;
+                    const count = Math.ceil(newLeadTravelers / cap);
+                    return (
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: '700', 
+                        color: newLeadVehicleCategory === 'J' ? '#c084fc' : newLeadVehicleCategory === 'Z' ? '#fb923c' : '#34d399',
+                        background: newLeadVehicleCategory === 'J' ? 'rgba(168,85,247,0.1)' : newLeadVehicleCategory === 'Z' ? 'rgba(251,146,60,0.1)' : 'rgba(16,185,129,0.1)',
+                        padding: '0.2rem 0.5rem',
+                        borderRadius: '4px',
+                        border: `1px solid ${newLeadVehicleCategory === 'J' ? 'rgba(168,85,247,0.3)' : newLeadVehicleCategory === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
+                      }}>
+                        🚗 Required: {count}x {newLeadVehicleCategory}-Series ({count * cap} max pax)
+                      </span>
+                    );
+                  })() : (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      (Choose category to calculate fleet)
+                    </span>
+                  )}
+                </div>
+                <select
+                  className="form-control"
+                  value={newLeadVehicleCategory}
+                  onChange={(e) => setNewLeadVehicleCategory(e.target.value)}
+                  style={{ background: 'var(--bg-surface)', color: newLeadVehicleCategory ? '#FFF' : 'var(--text-muted)' }}
+                >
+                  <option value="" style={{ color: 'var(--text-muted)' }}>-- Select Preferred Vehicle Type --</option>
+                  <option value="T" style={{ color: '#FFF' }}>T-Series (Hatchback/Sedan - Capacity: 4 Pax | WagonR, Dzire, Alto)</option>
+                  <option value="Z" style={{ color: '#FFF' }}>Z-Series (MUV/SUV - Capacity: 6 Pax | Innova, Ertiga, Scorpio, Bolero)</option>
+                  <option value="J" style={{ color: '#FFF' }}>J-Series (Maxi Cab - Capacity: 8 Pax | Tata Sumo, Maxx, Cruiser, Winger)</option>
+                </select>
+              </div>
+
               <div className="form-group">
                 <label style={{ fontWeight: '600' }}>Referral Partner / Lead Source</label>
                 <select 
@@ -5928,7 +6307,7 @@ export default function AdminDashboard() {
                                     </span>
                                   </div>
                                   <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                    {t.total_days} Days • Rs. {t.estimated_price}
+                                    {t.total_days} Days
                                   </span>
                                 </label>
                               );
@@ -6003,7 +6382,7 @@ export default function AdminDashboard() {
               {editingTemplate ? 'Edit Readymade Package' : 'Create Readymade Package'}
             </h3>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '1.5rem' }}>
-              Define the package name, regional classification, pricing in Rs., and configure day-by-day itineraries.
+              Define package blueprint name, regional classification, duration, and day-by-day sightseeing activities. Pricing is configured daywise when preparing client itineraries.
             </p>
 
             <form onSubmit={handleTemplateSubmit} style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, overflow: 'hidden' }}>
@@ -6020,7 +6399,7 @@ export default function AdminDashboard() {
                   />
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
                     <label>Region *</label>
                     <select 
@@ -6037,18 +6416,6 @@ export default function AdminDashboard() {
                     </select>
                   </div>
                   <div className="form-group">
-                    <label>Estimated Price (Rs.) *</label>
-                    <input 
-                      type="number" 
-                      className="form-control"
-                      min="0"
-                      step="0.01"
-                      value={templatePrice}
-                      onChange={(e) => setTemplatePrice(parseFloat(e.target.value) || 0)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
                     <label>Total Duration (Days) *</label>
                     <input 
                       type="number" 
@@ -6062,8 +6429,8 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <h4 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginTop: '1.5rem', marginBottom: '1rem', color: '#FFF' }}>
-                  Day-by-Day Itinerary Editor
+                <h4 style={{ borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', marginTop: '1.25rem', marginBottom: '1rem', color: '#FFF' }}>
+                  Day-by-Day Route & Activities Editor
                 </h4>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>

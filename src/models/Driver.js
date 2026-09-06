@@ -12,13 +12,17 @@ export class DriverModel {
     return res.rows[0] || null;
   }
 
-  static async create({ driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner }, client = null) {
+  static async create({ driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner, vehicleCategory = 'T', seatingCapacity = 4 }, client = null) {
     const q = client ? client.query.bind(client) : query;
+    // Auto-compute capacity if not provided
+    const defaultCap = vehicleCategory === 'J' ? 8 : vehicleCategory === 'Z' ? 6 : 4;
+    const finalCapacity = parseInt(seatingCapacity, 10) || defaultCap;
+
     const res = await q(
-      `INSERT INTO drivers_registry (driver_name, driver_phone, vehicle_number, vehicle_model, vehicle_owner)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO drivers_registry (driver_name, driver_phone, vehicle_number, vehicle_model, vehicle_owner, vehicle_category, seating_capacity)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, vehicleOwner || null]
+      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, vehicleOwner || null, vehicleCategory || 'T', finalCapacity]
     );
     return res.rows[0];
   }
@@ -34,14 +38,23 @@ export class DriverModel {
     return res.rows[0] || null;
   }
 
-  static async update(id, { driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner }, client = null) {
+  static async update(id, { driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner, vehicleCategory, seatingCapacity }, client = null) {
     const q = client ? client.query.bind(client) : query;
+    const defaultCap = vehicleCategory === 'J' ? 8 : vehicleCategory === 'Z' ? 6 : 4;
+    const finalCapacity = seatingCapacity !== undefined ? (parseInt(seatingCapacity, 10) || defaultCap) : undefined;
+
     const res = await q(
       `UPDATE drivers_registry 
-       SET driver_name = $1, driver_phone = $2, vehicle_number = $3, vehicle_model = $4, vehicle_owner = $5
-       WHERE id = $6
+       SET driver_name = COALESCE($1, driver_name), 
+           driver_phone = COALESCE($2, driver_phone), 
+           vehicle_number = COALESCE($3, vehicle_number), 
+           vehicle_model = COALESCE($4, vehicle_model), 
+           vehicle_owner = COALESCE($5, vehicle_owner),
+           vehicle_category = COALESCE($6, vehicle_category),
+           seating_capacity = COALESCE($7, seating_capacity)
+       WHERE id = $8
        RETURNING *`,
-      [driverName, driverPhone, vehicleNumber || null, vehicleModel || null, vehicleOwner || null, id]
+      [driverName, driverPhone, vehicleNumber, vehicleModel, vehicleOwner, vehicleCategory, finalCapacity, id]
     );
     return res.rows[0] || null;
   }

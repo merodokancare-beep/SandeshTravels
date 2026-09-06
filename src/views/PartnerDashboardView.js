@@ -43,6 +43,7 @@ export default function PartnerDashboard() {
   const [clientPhone, setClientPhone] = useState('');
   const [travelDates, setTravelDates] = useState('');
   const [numTravelers, setNumTravelers] = useState(1);
+  const [vehicleCategory, setVehicleCategory] = useState(''); // default empty: prompt selection
 
   const router = useRouter();
 
@@ -99,7 +100,8 @@ export default function PartnerDashboard() {
           clientName,
           clientPhone,
           travelDates,
-          numTravelers
+          numTravelers,
+          vehicleCategory
         }),
       });
 
@@ -112,6 +114,7 @@ export default function PartnerDashboard() {
         setClientPhone('');
         setTravelDates('');
         setNumTravelers(1);
+        setVehicleCategory('');
         // Refresh leads list
         fetchData();
       } else {
@@ -301,6 +304,41 @@ export default function PartnerDashboard() {
                 </div>
               </div>
 
+              <div className="form-group">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                  <label htmlFor="vehicleCategory" style={{ margin: 0, fontWeight: '600' }}>Preferred Vehicle Category</label>
+                  {vehicleCategory ? (() => {
+                    const cap = vehicleCategory === 'J' ? 8 : vehicleCategory === 'Z' ? 6 : 4;
+                    const count = Math.ceil(numTravelers / cap);
+                    return (
+                      <span style={{ 
+                        fontSize: '0.72rem', 
+                        fontWeight: '700', 
+                        color: vehicleCategory === 'J' ? '#c084fc' : vehicleCategory === 'Z' ? '#fb923c' : '#34d399'
+                      }}>
+                        🚗 {count}x {vehicleCategory}-Series
+                      </span>
+                    );
+                  })() : (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      (Optional)
+                    </span>
+                  )}
+                </div>
+                <select
+                  id="vehicleCategory"
+                  className="form-control"
+                  value={vehicleCategory}
+                  onChange={(e) => setVehicleCategory(e.target.value)}
+                  style={{ background: 'var(--bg-surface)', color: vehicleCategory ? '#FFF' : 'var(--text-muted)' }}
+                >
+                  <option value="" style={{ color: 'var(--text-muted)' }}>-- Select Preferred Vehicle Type --</option>
+                  <option value="T" style={{ color: '#FFF' }}>T-Series (Hatchback/Sedan - Max 4 Pax)</option>
+                  <option value="Z" style={{ color: '#FFF' }}>Z-Series (MUV/SUV - Max 6 Pax)</option>
+                  <option value="J" style={{ color: '#FFF' }}>J-Series (Maxi Cab - Max 8 Pax)</option>
+                </select>
+              </div>
+
               <button
                 type="submit"
                 className="btn btn-primary"
@@ -362,8 +400,19 @@ export default function PartnerDashboard() {
                         </td>
                         <td>
                           <div>{lead.travel_dates || 'Not specified'}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            {lead.num_travelers} guest(s)
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
+                            <span>{lead.num_travelers} guest(s)</span>
+                            <span style={{
+                              fontSize: '0.7rem',
+                              padding: '0.05rem 0.35rem',
+                              borderRadius: '3px',
+                              fontWeight: '600',
+                              background: lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.15)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.15)' : 'rgba(16,185,129,0.15)',
+                              color: lead.vehicle_category === 'J' ? '#c084fc' : lead.vehicle_category === 'Z' ? '#fb923c' : '#34d399',
+                              border: `1px solid ${lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.3)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
+                            }}>
+                              🚗 {lead.vehicle_count || 1}x {lead.vehicle_category || 'T'}
+                            </span>
                           </div>
                         </td>
                         <td>

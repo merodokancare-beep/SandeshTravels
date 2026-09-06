@@ -171,9 +171,25 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS advance_submitted_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS advance_verified_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS advance_verified_by INT REFERENCES admins(id) ON DELETE SET NULL,
+      ADD COLUMN IF NOT EXISTS vehicle_category VARCHAR(10) DEFAULT 'T',
+      ADD COLUMN IF NOT EXISTS vehicle_count INT DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS vehicle_preference_details VARCHAR(255),
       ALTER COLUMN travel_dates TYPE TEXT,
       ALTER COLUMN client_phone TYPE VARCHAR(100),
       ALTER COLUMN client_name TYPE VARCHAR(255);
+
+      -- Drivers registry vehicle category and seating capacity
+      ALTER TABLE drivers_registry 
+      ADD COLUMN IF NOT EXISTS vehicle_category VARCHAR(10) DEFAULT 'T',
+      ADD COLUMN IF NOT EXISTS seating_capacity INT DEFAULT 4;
+
+      UPDATE drivers_registry SET vehicle_category = 'T' WHERE vehicle_category IS NULL;
+      UPDATE drivers_registry SET seating_capacity = 4 WHERE seating_capacity IS NULL;
+
+      -- Itineraries vehicle configuration
+      ALTER TABLE itineraries
+      ADD COLUMN IF NOT EXISTS vehicle_category VARCHAR(10) DEFAULT 'T',
+      ADD COLUMN IF NOT EXISTS vehicle_count INT DEFAULT 1;
 
       -- Admin user enhancements for role-based permissions
       ALTER TABLE admins
@@ -209,7 +225,8 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS driver_name_snapshot VARCHAR(100),
       ADD COLUMN IF NOT EXISTS driver_phone_snapshot VARCHAR(50),
       ADD COLUMN IF NOT EXISTS vehicle_number_snapshot VARCHAR(50),
-      ADD COLUMN IF NOT EXISTS vehicle_model_snapshot VARCHAR(50);
+      ADD COLUMN IF NOT EXISTS vehicle_model_snapshot VARCHAR(50),
+      ADD COLUMN IF NOT EXISTS day_price NUMERIC(10,2) DEFAULT 0.00;
 
       UPDATE itinerary_days id_day
       SET 
@@ -253,7 +270,7 @@ export async function initDb() {
           name: '3N-4D Gangtok & Tsomgo Lake / Baba Mandir (4 Days)',
           region: 'East',
           total_days: 4,
-          estimated_price: 16500.00,
+          estimated_price: 0.00,
           days: JSON.stringify([
             { dayNumber: 1, description: 'Pick up from NJP Railway Station / Bagdogra Airport (IXB) and transfer to Gangtok (125 KMS / 4 HRS). En-route option for Melli River Rafting. Check-in to hotel, rest of the day free to explore M.G. Marg on your own.', activities: 'Airport/NJP Pickup, Melli River Rafting, M.G. Marg Evening Walk' },
             { dayNumber: 2, description: 'Gangtok Full Day Local Sightseeing (9:30 AM to 4:30 PM). Visits include Tashi Viewpoint, Ganesh Tok, Hanuman Tok, Bakthang Waterfalls, Ban Jhackri Waterfalls, Gonjang Monastery, Gangtok Ropeway, Flower Show, Handloom & Handicrafts, and Namgyal Institute of Tibetology.', activities: 'Tashi Viewpoint, Waterfalls, Monasteries, Gangtok Ropeway, Flower Show' },
@@ -265,7 +282,7 @@ export async function initDb() {
           name: 'North Sikkim Jeep Adventure - Lachen, Gurudongmar & Lachung (3 Days)',
           region: 'North',
           total_days: 3,
-          estimated_price: 15000.00,
+          estimated_price: 0.00,
           days: JSON.stringify([
             { dayNumber: 1, description: 'Pickup from Gangtok hotel (9:30–10:00 AM after permit creation). Transfer to Lachen (128 KMS / 6–8 HRS) via Tashi View Point, Seven Sister/Butterfly Waterfalls, Mangan Valley (Lunch), Singhik & Naga Waterfalls, Toong Check Post, Chumthang Valley. Arrive Lachen by 5 PM. Night halt at Lachen.', activities: 'Tashi View Point, Waterfalls, Mangan Valley, Singhik, Naga Waterfalls, Chumthang Valley, Lachen Halt' },
             { dayNumber: 2, description: 'Early 4:30 AM pickup from Lachen for Gurudongmar Lake (15,900 ft) via Thangu Valley (Breakfast). Reach lake by 9 AM. Return to Lachen for Lunch (2 PM), then transfer to Lachung via Bhim Nala Waterfalls. Night halt at Lachung.', activities: 'Gurudongmar High Altitude Lake, Thangu Valley, Bhim Nala Waterfalls, Lachung Halt' },
@@ -276,7 +293,7 @@ export async function initDb() {
           name: 'Pelling & Kalimpong Heritage Circuit (5 Days)',
           region: 'West',
           total_days: 5,
-          estimated_price: 25500.00,
+          estimated_price: 0.00,
           days: JSON.stringify([
             { dayNumber: 1, description: 'Pickup from Bagdogra Airport (IXB) / NJP Railway Station and transfer to Pelling (138 KMS / 6 HRS, 5,480 ft), the ancient capital of Sikkim. Check-in to hotel & rest of the day free to explore Pelling market.', activities: 'Airport/NJP Pickup, Drive to Pelling, Pelling Market Evening' },
             { dayNumber: 2, description: 'Pelling Full Day Sightseeing (9:00 AM to 5:00 PM). Visit Pelling Helipad, Khecheopalri Sacred Lake, Khangchendzonga Waterfalls, Pemayangtse Monastery, Rabdentse Palace Ruins, Rimbi Waterfalls, Darap Cherry Village, Sewaro Rock Garden, and Glass Skywalk.', activities: 'Khecheopalri Lake, Khangchendzonga Waterfalls, Pemayangtse Monastery, Rabdentse Ruins, Glass Skywalk' },
@@ -297,6 +314,21 @@ export async function initDb() {
 
       console.log('Seeded default regional itinerary templates.');
     }
+
+    // Ensure all template blueprints and unpriced draft itineraries have price = 0.00
+    await client.query(`
+      UPDATE itinerary_templates SET estimated_price = 0.00;
+      UPDATE itineraries 
+      SET price = 0.00 
+      WHERE status = 'draft' 
+        AND id IN (
+          SELECT i.id 
+          FROM itineraries i 
+          LEFT JOIN itinerary_days d ON d.itinerary_id = i.id 
+          GROUP BY i.id 
+          HAVING COALESCE(SUM(d.day_price), 0) = 0
+        );
+    `);
 
     // Seed default admin and hotel partner if none exists
     const partnersCount = await client.query('SELECT COUNT(*) FROM partners');
