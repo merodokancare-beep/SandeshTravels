@@ -304,6 +304,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         }
         const itinData = await itinRes.json();
         
+        let loadedVCount = 1;
         setLead(itinData.lead);
         if (itinData.lead) {
           setClientName(itinData.lead.client_name || '');
@@ -317,11 +318,12 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           const vCat = (itinData.lead.vehicle_category || 'T').toUpperCase();
           setVehicleCategory(vCat);
           const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
-          const vCnt = itinData.lead.vehicle_count || Math.max(1, Math.ceil(travelers / cap));
-          setVehicleCount(vCnt);
-        }
-        if (itinData.lead.start_date) {
-          setStartDate(itinData.lead.start_date.substring(0, 10));
+          loadedVCount = itinData.lead.vehicle_count || Math.max(1, Math.ceil(travelers / cap));
+          setVehicleCount(loadedVCount);
+
+          if (itinData.lead.start_date) {
+            setStartDate(itinData.lead.start_date.substring(0, 10));
+          }
         }
         
         if (itinData.itinerary) {
@@ -331,8 +333,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           setTotalDays(itinData.itinerary.total_days);
           
           // Map loaded days details
-          const currentVCount = vCnt || 1;
-          const loadedDays = itinData.days.map(d => {
+          const currentVCount = loadedVCount || 1;
+          const loadedDays = (itinData.days || []).map(d => {
             const total = (d.day_price !== undefined && d.day_price !== null && parseFloat(d.day_price) > 0) ? parseFloat(d.day_price) : 0;
             const perCar = total > 0 ? (total / currentVCount) : 0;
             return {
@@ -354,7 +356,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           }
         } else {
           // New itinerary defaults
-          setTitle(`Custom Travel Plan for ${itinData.lead.client_name}`);
+          setTitle(`Custom Travel Plan for ${itinData.lead?.client_name || 'Guest'}`);
           setTotalDays(3); // default 3 days
           initializeDays(3);
         }
