@@ -48,7 +48,7 @@ export class LeadController {
         );
       }
 
-      const { leadId, clientName, clientPhone, travelDates, numTravelers, status, startDate, action, attendedBy, attendedByName, vehicleCategory, vehicleCount, vehiclePreferenceDetails } = await request.json();
+      const { leadId, clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, status, startDate, action, attendedBy, attendedByName, vehicleCategory, vehicleCount, vehiclePreferenceDetails } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -100,52 +100,21 @@ export class LeadController {
       if (['new', 'quoted', 'converted'].includes(status) && (existingLead.status === 'assigned' || existingLead.status === 'completed')) {
         await client.query('ROLLBACK');
         return NextResponse.json(
-          { error: 'Invalid Status Transition: Once Fleet is Assigned or Completed, the lead cannot be reverted back to New, Quoted, or Converted.' },
+          { error: `Cannot change status back to "${status.toUpperCase()}". Fleet has already been assigned or journey is completed.` },
           { status: 400 }
         );
       }
 
-      // 2. From 'new', cannot jump directly to 'completed', 'assigned', or 'converted'
-      if (existingLead.status === 'new' && ['completed', 'assigned', 'converted'].includes(status)) {
+      // 2. Prevent setting 'converted' status manually if advance is not verified
+      if (status === 'converted' && existingLead.payment_status !== 'advance_paid') {
         await client.query('ROLLBACK');
         return NextResponse.json(
-          { error: `Invalid Status Transition: A new lead cannot be moved directly to "${status.toUpperCase()}". First build and price the itinerary (Quoted) and confirm with advance deposit (Converted).` },
+          { error: 'Cannot confirm booking: 10% Advance Deposit must be verified first.' },
           { status: 400 }
         );
       }
 
-      // 3. From 'quoted', cannot jump directly to 'completed' or 'assigned'
-      if (existingLead.status === 'quoted' && ['completed', 'assigned'].includes(status)) {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: `Invalid Status Transition: A quoted lead cannot be moved directly to "${status.toUpperCase()}". Advance deposit must be confirmed (Converted) first.` },
-          { status: 400 }
-        );
-      }
-
-      // 4. From 'converted', cannot jump directly to 'completed' without fleet assignment
-      if (existingLead.status === 'converted' && status === 'completed') {
-        await client.query('ROLLBACK');
-        return NextResponse.json(
-          { error: 'Invalid Status Transition: A converted journey must have fleet and driver assigned before marking as Completed.' },
-          { status: 400 }
-        );
-      }
-
-      // 5. Enforce that lead cannot be marked Quoted, Converted, or Assigned without a valid priced itinerary (> 0)
-      if (status && ['quoted', 'converted', 'assigned'].includes(status)) {
-        const itin = await ItineraryModel.getByLeadId(parseInt(leadId, 10), client);
-        const itinPrice = itin ? parseFloat(itin.price) : 0;
-        if (!itin || isNaN(itinPrice) || itinPrice <= 0) {
-          await client.query('ROLLBACK');
-          return NextResponse.json(
-            { error: 'Validation Error: Cannot mark lead as Quoted, Converted, or Fleet Assigned without a valid itinerary and pricing greater than ₹0. Please build and price the itinerary first.' },
-            { status: 400 }
-          );
-        }
-      }
-
-      // If lead is being converted or updated and had no attendee, attribute to current session user
+      // Calculate auto-assigned staff for status transitions
       let finalAttendedBy = attendedBy !== undefined ? attendedBy : existingLead.attended_by;
       let finalAttendedByName = attendedByName !== undefined ? attendedByName : existingLead.attended_by_name;
       let finalAttendedAt = existingLead.attended_at;
@@ -161,6 +130,10 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers,
+        adults,
+        children,
+        childAges,
+        child_ages,
         status,
         startDate,
         vehicleCategory,
@@ -223,7 +196,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, vehiclePreferenceDetails, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, vehiclePreferenceDetails, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -234,7 +207,9 @@ export class LeadController {
 
       await client.query('BEGIN');
 
-      const guestsCount = parseInt(numTravelers, 10) || 1;
+      const parsedAdults = adults !== undefined ? (parseInt(adults, 10) || 1) : 1;
+      const parsedChildren = children !== undefined ? (parseInt(children, 10) || 0) : 0;
+      const guestsCount = numTravelers ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren)) : (parsedAdults + parsedChildren);
       const targetTemplateIds = Array.isArray(templateIds) && templateIds.length > 0 
         ? templateIds 
         : (templateId ? [templateId] : []);
@@ -243,10 +218,10 @@ export class LeadController {
       const parsedPartnerId = partnerId ? parseInt(partnerId, 10) : null;
       const determinedSource = source || (parsedPartnerId ? 'partner' : 'direct');
 
-      // Auto-compute required vehicle count based on Sikkim capacity rules: T=4, Z=6, J=8
+      // Default vehicle count is 1 unless explicitly specified
       const cat = (vehicleCategory || 'T').toUpperCase();
       const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
-      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(guestsCount / capacity);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : 1;
       const autoDetails = vehiclePreferenceDetails || `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
@@ -255,6 +230,10 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers: guestsCount,
+        adults: parsedAdults,
+        children: parsedChildren,
+        childAges: childAges || [],
+        child_ages: child_ages || null,
         status: initialStatus,
         startDate: startDate || null,
         source: determinedSource,
@@ -354,7 +333,7 @@ export class LeadController {
 
   static async publicCreateLead(request) {
     try {
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, startDate, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -363,10 +342,12 @@ export class LeadController {
         );
       }
 
-      const travelersCount = parseInt(numTravelers, 10) || 1;
+      const parsedAdults = adults !== undefined ? (parseInt(adults, 10) || 1) : 1;
+      const parsedChildren = children !== undefined ? (parseInt(children, 10) || 0) : 0;
+      const travelersCount = numTravelers ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren)) : (parsedAdults + parsedChildren);
       const cat = (vehicleCategory || 'T').toUpperCase();
       const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
-      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(travelersCount / capacity);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : 1;
       const autoDetails = `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
@@ -375,6 +356,10 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers: travelersCount,
+        adults: parsedAdults,
+        children: parsedChildren,
+        childAges: childAges || [],
+        child_ages: child_ages || null,
         status: 'new',
         startDate: startDate || null,
         source: 'website',
@@ -409,7 +394,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, startDate, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, startDate, vehicleCategory = 'T', vehicleCount, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -418,10 +403,12 @@ export class LeadController {
         );
       }
 
-      const travelersCount = parseInt(numTravelers, 10) || 1;
+      const parsedAdults = adults !== undefined ? (parseInt(adults, 10) || 1) : 1;
+      const parsedChildren = children !== undefined ? (parseInt(children, 10) || 0) : 0;
+      const travelersCount = numTravelers ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren)) : (parsedAdults + parsedChildren);
       const cat = (vehicleCategory || 'T').toUpperCase();
       const capacity = cat === 'J' ? 8 : (cat === 'Z' ? 6 : 4);
-      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : Math.ceil(travelersCount / capacity);
+      const computedVehicleCount = vehicleCount ? parseInt(vehicleCount, 10) : 1;
       const autoDetails = `${computedVehicleCount}x ${cat}-Series (${cat === 'J' ? 'Maxi SUV 8-Seater' : cat === 'Z' ? 'MUV/SUV 6-Seater' : 'Sedan/Hatchback 4-Seater'})`;
 
       const lead = await LeadModel.create({
@@ -430,6 +417,10 @@ export class LeadController {
         clientPhone,
         travelDates,
         numTravelers: travelersCount,
+        adults: parsedAdults,
+        children: parsedChildren,
+        childAges: childAges || [],
+        child_ages: child_ages || null,
         status: 'new',
         startDate: startDate || null,
         source: 'partner',

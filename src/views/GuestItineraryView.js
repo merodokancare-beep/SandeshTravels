@@ -102,7 +102,7 @@ export default async function GuestItinerary({ params }) {
             <div>
               <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{itinerary.title}</h1>
               <p style={{ color: 'var(--text-secondary)' }}>
-                Prepared for <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> • {lead.num_travelers} Guest(s)
+                Prepared for <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> • {lead.num_travelers} Guest(s){lead.children > 0 ? ` (${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Child${lead.children > 1 ? 'ren' : ''})` : ''}
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>

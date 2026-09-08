@@ -307,23 +307,9 @@ export default function PartnerDashboard() {
               <div className="form-group">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
                   <label htmlFor="vehicleCategory" style={{ margin: 0, fontWeight: '600' }}>Preferred Vehicle Category</label>
-                  {vehicleCategory ? (() => {
-                    const cap = vehicleCategory === 'J' ? 8 : vehicleCategory === 'Z' ? 6 : 4;
-                    const count = Math.ceil(numTravelers / cap);
-                    return (
-                      <span style={{ 
-                        fontSize: '0.72rem', 
-                        fontWeight: '700', 
-                        color: vehicleCategory === 'J' ? '#c084fc' : vehicleCategory === 'Z' ? '#fb923c' : '#34d399'
-                      }}>
-                        🚗 {count}x {vehicleCategory}-Series
-                      </span>
-                    );
-                  })() : (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-                      (Optional)
-                    </span>
-                  )}
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                    (Optional)
+                  </span>
                 </div>
                 <select
                   id="vehicleCategory"

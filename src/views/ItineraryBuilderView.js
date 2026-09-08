@@ -58,6 +58,9 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [localPhone, setLocalPhone] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [travelDates, setTravelDates] = useState('');
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
+  const [childAges, setChildAges] = useState([]);
   const [numTravelers, setNumTravelers] = useState(1);
   const [vehicleCategory, setVehicleCategory] = useState('T');
   const [vehicleCount, setVehicleCount] = useState(1);
@@ -314,11 +317,23 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           setClientPhone(itinData.lead.client_phone || '');
           setTravelDates(itinData.lead.travel_dates || '');
           const travelers = itinData.lead.num_travelers || 1;
+          const parsedAdults = itinData.lead.adults || (itinData.lead.children ? (travelers - itinData.lead.children) : travelers);
+          const parsedChildren = itinData.lead.children || 0;
+          let parsedChildAges = [];
+          if (itinData.lead.child_ages) {
+            try {
+              parsedChildAges = typeof itinData.lead.child_ages === 'string' ? JSON.parse(itinData.lead.child_ages) : itinData.lead.child_ages;
+            } catch (e) {
+              parsedChildAges = [];
+            }
+          }
+          setAdults(parsedAdults);
+          setChildren(parsedChildren);
+          setChildAges(Array.isArray(parsedChildAges) ? parsedChildAges : []);
           setNumTravelers(travelers);
           const vCat = (itinData.lead.vehicle_category || 'T').toUpperCase();
           setVehicleCategory(vCat);
-          const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
-          loadedVCount = itinData.lead.vehicle_count || Math.max(1, Math.ceil(travelers / cap));
+          loadedVCount = (itinData.lead.vehicle_count !== undefined && itinData.lead.vehicle_count !== null && parseInt(itinData.lead.vehicle_count, 10) > 0) ? parseInt(itinData.lead.vehicle_count, 10) : 1;
           setVehicleCount(loadedVCount);
 
           if (itinData.lead.start_date) {
@@ -685,7 +700,10 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           clientName,
           clientPhone: fullPhone,
           travelDates,
-          numTravelers,
+          numTravelers: (parseInt(adults, 10) || 1) + (parseInt(children, 10) || 0),
+          adults: parseInt(adults, 10) || 1,
+          children: parseInt(children, 10) || 0,
+          childAges: children > 0 ? childAges.map(a => parseInt(a, 10)) : [],
           vehicleCategory,
           vehicleCount
         })
@@ -699,7 +717,19 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
         setLocalPhone(parsed.localNumber);
         setClientPhone(data.lead.client_phone || '');
         setTravelDates(data.lead.travel_dates || '');
-        setNumTravelers(data.lead.num_travelers || 1);
+        const tCount = data.lead.num_travelers || 1;
+        setNumTravelers(tCount);
+        setAdults(data.lead.adults || (data.lead.children ? (tCount - data.lead.children) : tCount));
+        setChildren(data.lead.children || 0);
+        let parsedCAges = [];
+        if (data.lead.child_ages) {
+          try {
+            parsedCAges = typeof data.lead.child_ages === 'string' ? JSON.parse(data.lead.child_ages) : data.lead.child_ages;
+          } catch (e) {
+            parsedCAges = [];
+          }
+        }
+        setChildAges(Array.isArray(parsedCAges) ? parsedCAges : []);
         setVehicleCategory(data.lead.vehicle_category || 'T');
         setVehicleCount(data.lead.vehicle_count || 1);
         setIsEditingGuest(false);
@@ -831,8 +861,20 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     const totalPrice = parseFloat(price) || 0;
     const advanceRequired = Math.round(totalPrice * 0.1);
 
+    const formattedGuests = (lead.children > 0 || children > 0)
+      ? (() => {
+          let ages = '';
+          const rawAges = childAges.length > 0 ? childAges : lead.child_ages;
+          try {
+            const parsed = typeof rawAges === 'string' ? JSON.parse(rawAges) : rawAges;
+            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+          } catch (e) {}
+          return `${numTravelers || lead.num_travelers || 1} Traveler(s) [${adults || lead.adults || 1} Adult(s), ${children || lead.children} Child(ren)${ages}]`;
+        })()
+      : `${numTravelers || lead.num_travelers || 1} Traveler(s)`;
+
     if ((lead.status === 'converted' || lead.status === 'completed') && hasDriver) {
-      return `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n*JOURNEY DETAILS:*\n• Route: ${title}\n• Start Date: ${formattedStartDate}\n• Duration: ${totalDays} Days\n• Guests: ${numTravelers} Traveler(s)\n• Vehicle: ${vCount}x ${vLabel}\n• Overall Price: Rs. ${price}\n\n*ASSIGNED DRIVER & VEHICLE:*\n• Driver Name: ${driver.driver_name}\n• Driver Contact: ${driver.driver_phone}\n• Assigned Car: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\nPlease click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
+      return `Hi ${lead.client_name}, your booking with Sandesh Travels is confirmed! 🚗✨\n\n*JOURNEY DETAILS:*\n• Route: ${title}\n• Start Date: ${formattedStartDate}\n• Duration: ${totalDays} Days\n• Guests: ${formattedGuests}\n• Vehicle: ${vCount}x ${vLabel}\n• Overall Price: Rs. ${price}\n\n*ASSIGNED DRIVER & VEHICLE:*\n• Driver Name: ${driver.driver_name}\n• Driver Contact: ${driver.driver_phone}\n• Assigned Car: ${driver.vehicle_model} (${driver.vehicle_number || 'N/A'})\n\nPlease click the link below to view your full day-by-day program, accommodation check-in stays, and updates:\n${guestItineraryUrl}\n\nThank you for choosing Sandesh Travels!`;
     }
 
     let msg = `*TOUR QUOTATION & ITINERARY – Sandesh Travels* 🏔️✈️\n\n`;
@@ -843,7 +885,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
     msg += `• *Tour Plan:* ${title}\n`;
     msg += `• *Duration:* ${totalDays} Days / ${Math.max(1, totalDays - 1)} Nights\n`;
     msg += `• *Journey Start Date:* ${formattedStartDate}\n`;
-    msg += `• *Guests:* ${numTravelers} Traveler(s)\n`;
+    msg += `• *Guests:* ${formattedGuests}\n`;
     msg += `• *Vehicle Allocated:* ${vCount}x ${vLabel}\n`;
     if (totalPrice > 0) {
       msg += `• *Total Package Cost:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
@@ -1079,15 +1121,80 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   </div>
 
                   <div>
-                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>GUEST SIZE (PASSENGERS)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      className="form-control"
-                      value={numTravelers}
-                      onChange={(e) => setNumTravelers(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                      style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
-                    />
+                    <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem', marginBottom: '0.2rem' }}>GUEST BREAKDOWN (ADULTS & CHILDREN)</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                      <div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Adults (12+ yrs)</span>
+                        <input
+                          type="number"
+                          min="1"
+                          className="form-control"
+                          value={adults}
+                          onChange={(e) => {
+                            const val = Math.max(1, parseInt(e.target.value, 10) || 1);
+                            setAdults(val);
+                            setNumTravelers(val + children);
+                          }}
+                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                        />
+                      </div>
+                      <div>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Children (0-11 yrs)</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="10"
+                          className="form-control"
+                          value={children}
+                          onChange={(e) => {
+                            const count = Math.max(0, parseInt(e.target.value, 10) || 0);
+                            setChildren(count);
+                            setNumTravelers(adults + count);
+                            setChildAges(prev => {
+                              const next = [...prev];
+                              if (count > next.length) {
+                                while (next.length < count) next.push('');
+                              } else if (count < next.length) {
+                                return next.slice(0, count);
+                              }
+                              return next;
+                            });
+                          }}
+                          style={{ padding: '0.35rem 0.6rem', fontSize: '0.85rem' }}
+                        />
+                      </div>
+                    </div>
+                    {children > 0 && (
+                      <div style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px solid rgba(56, 189, 248, 0.25)', borderRadius: '4px', padding: '0.5rem', marginTop: '0.3rem' }}>
+                        <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: '600', display: 'block', marginBottom: '0.3rem' }}>
+                          Children Ages (Required):
+                        </span>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: '0.4rem' }}>
+                          {Array.from({ length: children }).map((_, cIdx) => (
+                            <div key={cIdx}>
+                              <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Child {cIdx + 1} Age:</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="17"
+                                placeholder="Age"
+                                className="form-control"
+                                value={childAges[cIdx] ?? ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setChildAges(prev => {
+                                    const next = [...prev];
+                                    next[cIdx] = val;
+                                    return next;
+                                  });
+                                }}
+                                style={{ padding: '0.25rem 0.4rem', fontSize: '0.8rem' }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -1180,15 +1287,25 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
 
                   <div>
                     <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>GUEST SIZE</label>
-                    <strong>{lead?.num_travelers} travelers</strong>
+                    <strong>
+                      {lead?.num_travelers} travelers {lead?.children > 0 ? (() => {
+                        let ages = '';
+                        try {
+                          const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+                          if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+                        } catch (e) {}
+                        return `(${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${ages})`;
+                      })() : ''}
+                    </strong>
                   </div>
 
                   {/* Preferred Vehicle Requirements Snapshot */}
                   {(() => {
                     const vCat = (vehicleCategory || lead?.vehicle_category || 'T').toUpperCase();
                     const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
-                    const vCount = vehicleCount || lead?.vehicle_count || Math.ceil((numTravelers || 1) / cap);
+                    const vCount = vehicleCount || lead?.vehicle_count || 1;
                     const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+                    const isFamilyAdj = children > 0 && vCount === 1 && numTravelers > cap;
                     return (
                       <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '0.65rem 0.85rem', borderRadius: '6px', border: '1px solid rgba(56, 189, 248, 0.25)', marginTop: '0.25rem' }}>
                         <label style={{ color: '#38BDF8', display: 'block', fontSize: '0.75rem', fontWeight: 700, marginBottom: '0.2rem' }}>
@@ -1198,7 +1315,10 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                           {vCount}x {vCat}-Series ({vLabel})
                         </div>
                         <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                          Allocated for {numTravelers} traveler(s) ({vCount * cap} max seats)
+                          {isFamilyAdj 
+                            ? `Allocated for ${adults || (numTravelers - children)} Adults + ${children} Children (Kids adjust with parents)`
+                            : `Allocated for ${numTravelers} traveler(s) (${vCount * cap} max seats)`
+                          }
                         </div>
                       </div>
                     );
@@ -1571,36 +1691,69 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                       (Change category or fleet size anytime per guest preference)
                     </span>
                   </div>
-                  {/* Realtime capacity status badge */}
+                  {/* Realtime capacity & RTO Compliance status badge */}
                   {(() => {
                     const vCat = (vehicleCategory || 'T').toUpperCase();
                     const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
                     const totalCapacity = (vehicleCount || 1) * cap;
                     const guests = numTravelers || 1;
-                    const isUnderCapacity = totalCapacity < guests;
+                    const adultCount = adults || (children ? Math.max(1, guests - children) : guests);
+                    const kidCount = children || 0;
+                    
+                    // Permissible lap limit per car under Sikkim mountain transport rules (1 lap kid per car)
+                    const maxAllowableWithLap = (cap * (vehicleCount || 1)) + (1 * (vehicleCount || 1));
+                    const isWithinStandardSeats = totalCapacity >= guests;
+                    const isAcceptableFamilyLap = !isWithinStandardSeats && guests <= maxAllowableWithLap && adultCount <= totalCapacity;
+                    const isExceedingCapacity = guests > maxAllowableWithLap || adultCount > totalCapacity;
+
+                    if (isWithinStandardSeats) {
+                      return (
+                        <span className="badge" style={{
+                          background: 'rgba(16, 185, 129, 0.15)',
+                          border: '1px solid #10b981',
+                          color: '#6ee7b7',
+                          fontSize: '0.75rem',
+                          padding: '0.25rem 0.65rem'
+                        }}>
+                          <i className="fa-solid fa-circle-check" style={{ marginRight: '0.35rem' }}></i>
+                          {vehicleCount}x {vCat}-Series = {totalCapacity} Dedicated Seats ({guests} Guests)
+                        </span>
+                      );
+                    }
+
+                    if (isAcceptableFamilyLap) {
+                      return (
+                        <span className="badge" style={{
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          border: '1px solid #38bdf8',
+                          color: '#7dd3fc',
+                          fontSize: '0.75rem',
+                          padding: '0.25rem 0.65rem'
+                        }}>
+                          <i className="fa-solid fa-child-reaching" style={{ marginRight: '0.35rem' }}></i>
+                          {vehicleCount}x {vCat}-Series ({adultCount} Adults + {kidCount} Kids with 1 lap adjustment)
+                        </span>
+                      );
+                    }
+
                     return (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                         <span className="badge" style={{
-                          background: isUnderCapacity ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
-                          border: isUnderCapacity ? '1px solid #ef4444' : '1px solid #10b981',
-                          color: isUnderCapacity ? '#fca5a5' : '#6ee7b7',
+                          background: 'rgba(239, 68, 68, 0.18)',
+                          border: '1px solid #ef4444',
+                          color: '#fca5a5',
                           fontSize: '0.75rem',
-                          padding: '0.2rem 0.6rem'
+                          padding: '0.25rem 0.65rem'
                         }}>
-                          <i className={isUnderCapacity ? "fa-solid fa-triangle-exclamation" : "fa-solid fa-users"} style={{ marginRight: '0.3rem' }}></i>
-                          {vehicleCount}x {vCat}-Series = {totalCapacity} Seats for {guests} Guest{guests > 1 ? 's' : ''}
+                          <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '0.3rem' }}></i>
+                          ⚠️ Overcrowded: {guests} Pax ({adultCount} Adults, {kidCount} Kids) in {vehicleCount}x {vCat}-Series ({totalCapacity} Seats)
                         </span>
-                        {isUnderCapacity && (
-                          <span style={{ fontSize: '0.72rem', color: '#f87171' }}>
-                            ⚠️ Need at least {Math.ceil(guests / cap)} car(s) or higher series
-                          </span>
-                        )}
                       </div>
                     );
                   })()}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr auto', gap: '1rem', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 0.9fr auto', gap: '1rem', alignItems: 'center' }}>
                   <div className="form-group" style={{ margin: 0 }}>
                     <label htmlFor="vehicleCategorySelect" style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
                       Preferred Vehicle Category (SK Rule)
@@ -1616,8 +1769,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                       style={{ padding: '0.45rem 0.75rem', fontSize: '0.85rem', background: 'var(--bg-surface-elevated)', color: '#FFF' }}
                     >
                       <option value="T">T-Series — Hatchback / Sedan (Max 4 Pax / Car)</option>
-                      <option value="Z">Z-Series — MUV / SUV / Innova (Max 6 Pax / Car)</option>
-                      <option value="J">J-Series — Maxi Cab / Bolero (Max 8 Pax / Car)</option>
+                      <option value="Z">Z-Series — MUV / SUV / Bolero (Max 6-7 Pax / Car)</option>
+                      <option value="J">J-Series — Maxi SUV / Innova (Max 8 Pax / Car)</option>
                     </select>
                   </div>
 
@@ -1657,25 +1810,157 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
-                    <label style={{ fontSize: '0.78rem', opacity: 0, marginBottom: '0.25rem' }}>Auto</label>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      style={{ padding: '0.45rem 0.85rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap' }}
-                      title="Auto-calculate required vehicle count from guest size"
-                      onClick={() => {
-                        const vCat = (vehicleCategory || 'T').toUpperCase();
-                        const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
-                        const autoCnt = Math.max(1, Math.ceil((numTravelers || 1) / cap));
-                        handleFleetCountChange(autoCnt);
-                        addToast(`Fleet size auto-calculated to ${autoCnt}x ${vCat}-Series vehicle(s) for ${numTravelers || 1} travelers.`, 'info');
-                      }}
-                    >
-                      <i className="fa-solid fa-calculator"></i> Auto-Fleet Size
-                    </button>
+                  <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%', gap: '0.35rem' }}>
+                    <label style={{ fontSize: '0.78rem', opacity: 0, marginBottom: '0.25rem' }}>Options</label>
+                    <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      {children > 0 && (
+                        <button
+                          type="button"
+                          className="btn btn-primary"
+                          style={{
+                            padding: '0.45rem 0.75rem',
+                            fontSize: '0.8rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            whiteSpace: 'nowrap',
+                            background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)'
+                          }}
+                          title="Fit the entire family in 1 single vehicle according to Sikkim capacity rules"
+                          onClick={() => {
+                            const guests = numTravelers || (adults + children);
+                            if (guests <= 5) {
+                              // Fits in 1x T-Series (4 seats + 1 lap kid)
+                              setVehicleCategory('T');
+                              handleFleetCountChange(1);
+                              addToast(`Configured 1x T-Series cab for ${guests} guests (family adjustment).`, 'success');
+                            } else if (guests <= 7) {
+                              // 6-7 guests (e.g. 2 adults + 5 kids) fit in 1x Z-Series Bolero/SUV!
+                              setVehicleCategory('Z');
+                              handleFleetCountChange(1);
+                              addToast(`Smart Rule: All ${guests} family members fit in 1x Z-Series SUV (6-7 seats)!`, 'success');
+                            } else if (guests <= 9) {
+                              // 8-9 guests fit in 1x J-Series Innova/Maxi Cab!
+                              setVehicleCategory('J');
+                              handleFleetCountChange(1);
+                              addToast(`Smart Rule: All ${guests} family members fit in 1x J-Series Maxi SUV (8 seats)!`, 'success');
+                            } else {
+                              const autoCnt = Math.ceil(guests / 8);
+                              setVehicleCategory('J');
+                              handleFleetCountChange(autoCnt);
+                              addToast(`Allocated ${autoCnt}x J-Series vehicles for large group of ${guests} guests.`, 'info');
+                            }
+                          }}
+                        >
+                          <i className="fa-solid fa-people-roof"></i> Adjust in 1 Cab (Smart)
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ padding: '0.45rem 0.75rem', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', whiteSpace: 'nowrap' }}
+                        title="Auto-calculate separate car capacity for all pax"
+                        onClick={() => {
+                          const vCat = (vehicleCategory || 'T').toUpperCase();
+                          const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+                          const autoCnt = Math.max(1, Math.ceil((numTravelers || 1) / cap));
+                          handleFleetCountChange(autoCnt);
+                          addToast(`Fleet size calculated to ${autoCnt}x ${vCat}-Series vehicle(s) for ${numTravelers || 1} travelers.`, 'info');
+                        }}
+                      >
+                        <i className="fa-solid fa-calculator"></i> Auto-Fleet Size
+                      </button>
+                    </div>
                   </div>
                 </div>
+
+                {/* Sikkim Rule Compliance & Family Guidance Bar */}
+                {(() => {
+                  const vCat = (vehicleCategory || 'T').toUpperCase();
+                  const cap = vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4;
+                  const totalSeats = (vehicleCount || 1) * cap;
+                  const guests = numTravelers || 1;
+                  const adultCount = adults || (children ? Math.max(1, guests - children) : guests);
+                  const kidCount = children || 0;
+                  const maxAllowedWithLap = totalSeats + (1 * (vehicleCount || 1));
+                  const isSevereOvercrowding = guests > maxAllowedWithLap;
+
+                  return (
+                    <div style={{
+                      background: isSevereOvercrowding ? 'rgba(239, 68, 68, 0.08)' : 'rgba(255,255,255,0.02)',
+                      border: isSevereOvercrowding ? '1px solid rgba(239, 68, 68, 0.35)' : '1px dashed rgba(56, 189, 248, 0.3)',
+                      borderRadius: 'var(--border-radius-sm)',
+                      padding: '0.6rem 0.85rem',
+                      fontSize: '0.78rem',
+                      color: isSevereOvercrowding ? '#fca5a5' : 'var(--text-secondary)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.4rem'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.4rem' }}>
+                        <div>
+                          <strong>{isSevereOvercrowding ? '⚠️ Sikkim Transport Compliance Note:' : '💡 Vehicle Rule Guideline:'}</strong>{' '}
+                          {kidCount > 0 ? (
+                            <span>Group has <strong>{adultCount} Adults + {kidCount} Children ({guests} total)</strong>. </span>
+                          ) : (
+                            <span>Group has <strong>{guests} Travelers</strong>. </span>
+                          )}
+                          {isSevereOvercrowding && (
+                            <span style={{ color: '#ef4444', fontWeight: 600 }}>
+                              {guests} passengers cannot travel in {vehicleCount}x {vCat}-Series (Max {maxAllowedWithLap} pax allowed under RTO checkpoint rules).
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quick Upgrade/Split Action suggestions */}
+                      <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap', paddingTop: '0.2rem' }}>
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Suggested Solutions:</span>
+                        {guests <= 7 && vCat !== 'Z' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', border: '1px solid #fb923c', color: '#fb923c', background: 'rgba(251, 146, 60, 0.1)' }}
+                            onClick={() => {
+                              setVehicleCategory('Z');
+                              handleFleetCountChange(1);
+                              addToast(`Switched to 1x Z-Series (6-7 Seats) — fits all ${guests} family members in 1 car!`, 'success');
+                            }}
+                          >
+                            🚗 1x Z-Series (Fit all {guests} in 1 Cab)
+                          </button>
+                        )}
+                        {guests <= 9 && vCat !== 'J' && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', border: '1px solid #c084fc', color: '#c084fc', background: 'rgba(192, 132, 252, 0.1)' }}
+                            onClick={() => {
+                              setVehicleCategory('J');
+                              handleFleetCountChange(1);
+                              addToast(`Switched to 1x J-Series (8 Seats) — fits all ${guests} family members with luggage in 1 car!`, 'success');
+                            }}
+                          >
+                            🚙 1x J-Series (Maxi SUV 8-Seats)
+                          </button>
+                        )}
+                        {vCat === 'T' && vehicleCount === 1 && guests > 4 && (
+                          <button
+                            type="button"
+                            className="btn btn-secondary"
+                            style={{ padding: '0.2rem 0.55rem', fontSize: '0.72rem', border: '1px solid #38bdf8', color: '#38bdf8' }}
+                            onClick={() => {
+                              handleFleetCountChange(2);
+                              addToast(`Allocated 2x T-Series cars (4 seats each = 8 seats total).`, 'info');
+                            }}
+                          >
+                            🚗🚗 2x T-Series (Split into 2 Cabs)
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Days editor details */}

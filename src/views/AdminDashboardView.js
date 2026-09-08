@@ -115,16 +115,60 @@ function getLeadSourceInfo(lead) {
 function getCleanTravelDates(lead) {
   if (!lead) return 'Dates not set';
   if (lead.start_date) {
+    try {
+      const parts = String(lead.start_date).substring(0, 10).split('-');
+      if (parts.length === 3) {
+        const start = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        const totalDays = parseInt(lead.total_days, 10);
+        if (totalDays && totalDays > 1) {
+          const end = new Date(start);
+          end.setDate(start.getDate() + totalDays - 1);
+          const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+          const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          if (start.getFullYear() !== end.getFullYear()) {
+            const startStrFull = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            return `${startStrFull} – ${endStr}`;
+          }
+          return `${startStr} – ${endStr}`;
+        }
+        if (totalDays === 1) {
+          return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (1 Day)`;
+        }
+        return `Starts: ${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+      }
+    } catch (e) {}
     return `Starts: ${new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
   if (!lead.travel_dates) return 'Dates not set';
 
-  if (lead.travel_dates.includes('|')) {
-    const parts = lead.travel_dates.split('|').map(p => p.trim());
+  let rawDate = lead.travel_dates;
+  if (rawDate.includes('|')) {
+    const parts = rawDate.split('|').map(p => p.trim());
     const datePart = parts.find(p => !p.includes('Website') && !p.includes('[') && !p.includes('Notes:'));
-    if (datePart) return datePart;
+    if (datePart) rawDate = datePart;
   }
-  const cleaned = lead.travel_dates.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
+  const cleaned = rawDate.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
+
+  // Try extracting YYYY-MM-DD if total_days is present
+  if (lead.total_days && parseInt(lead.total_days, 10) > 1) {
+    const match = cleaned.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      try {
+        const start = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+        const totalDays = parseInt(lead.total_days, 10);
+        const end = new Date(start);
+        end.setDate(start.getDate() + totalDays - 1);
+        const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        if (start.getFullYear() !== end.getFullYear()) {
+          const startStrFull = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          return `${startStrFull} – ${endStr}`;
+        }
+        return `${startStr} – ${endStr}`;
+      } catch (e) {}
+    }
+  }
+
   return cleaned || 'Dates not set';
 }
 
@@ -141,7 +185,7 @@ export default function AdminDashboard() {
   const [fleetStartDates, setFleetStartDates] = useState({});
   const [calendarStartDate, setCalendarStartDate] = useState(getTodayDateString());
   const [bookModalTemplateRegion, setBookModalTemplateRegion] = useState('All');
-  const [activeTab, setActiveTab] = useState('crm'); // 'crm', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports', 'users', 'settings'
+  const [activeTab, setActiveTab] = useState('leads'); // 'leads', 'fleet', 'dispatch', 'tracking', 'hotels', 'drivers', 'templates', 'reports', 'users', 'settings'
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
@@ -451,9 +495,43 @@ export default function AdminDashboard() {
   const [newLeadLocalPhone, setNewLeadLocalPhone] = useState('');
   const [newLeadPhone, setNewLeadPhone] = useState('');
   const [newLeadDates, setNewLeadDates] = useState('');
+  const [newLeadAdults, setNewLeadAdults] = useState(1);
+  const [newLeadChildren, setNewLeadChildren] = useState(0);
+  const [newLeadChildAges, setNewLeadChildAges] = useState([]);
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
   const [newLeadVehicleCategory, setNewLeadVehicleCategory] = useState(''); // default empty: prompt user to select
   const [newLeadStartDate, setNewLeadStartDate] = useState('');
+
+  const handleAdultsChange = (val) => {
+    const num = Math.max(1, parseInt(val, 10) || 1);
+    setNewLeadAdults(num);
+    setNewLeadTravelers(num + (parseInt(newLeadChildren, 10) || 0));
+  };
+
+  const handleChildrenChange = (val) => {
+    const count = Math.max(0, parseInt(val, 10) || 0);
+    setNewLeadChildren(count);
+    setNewLeadTravelers((parseInt(newLeadAdults, 10) || 1) + count);
+    setNewLeadChildAges((prev) => {
+      const next = [...prev];
+      if (count > next.length) {
+        while (next.length < count) {
+          next.push('');
+        }
+      } else if (count < next.length) {
+        return next.slice(0, count);
+      }
+      return next;
+    });
+  };
+
+  const handleChildAgeChange = (index, val) => {
+    setNewLeadChildAges((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      return next;
+    });
+  };
   const [selectedWalkInTemplateIds, setSelectedWalkInTemplateIds] = useState([]);
   const [isWalkInMultiDropdownOpen, setIsWalkInMultiDropdownOpen] = useState(false);
   const walkInDropdownRef = useRef(null);
@@ -1172,9 +1250,18 @@ export default function AdminDashboard() {
     const advancePaid = parseFloat(lead.advance_paid) || 0;
     const balance = Math.max(0, totalPrice - advancePaid);
     
-    const formattedStartDate = lead.start_date
-      ? new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : (lead.travel_dates || 'As Scheduled');
+    const formattedStartDate = getCleanTravelDates(lead);
+
+    const formattedGuests = lead.children > 0
+      ? (() => {
+          let ages = '';
+          try {
+            const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+          } catch (e) {}
+          return `${lead.num_travelers || 1} Traveler(s) [${lead.adults || 1} Adult(s), ${lead.children} Child(ren)${ages}]`;
+        })()
+      : `${lead.num_travelers || 1} Traveler(s)`;
 
     let msg = `*BOOKING CONFIRMED – Sandesh Travels* 🏔️✨\n\n`;
     msg += `Dear *${lead.client_name}*,\n\n`;
@@ -1185,7 +1272,7 @@ export default function AdminDashboard() {
       msg += `• *Tour Package:* ${lead.itinerary_title || lead.package_name}\n`;
     }
     msg += `• *Tour Start Date:* ${formattedStartDate}\n`;
-    msg += `• *Guests:* ${lead.num_travelers || 1} Traveler(s)\n`;
+    msg += `• *Guests:* ${formattedGuests}\n`;
     if (totalPrice > 0) {
       msg += `• *Total Package:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
       msg += `• *Advance Received:* Rs. ${advancePaid.toLocaleString('en-IN')} (Verified ✅)\n`;
@@ -1212,13 +1299,22 @@ export default function AdminDashboard() {
     
     const totalPrice = parseFloat(lead.itinerary_price) || 0;
     const advanceRequired = Math.round(totalPrice * 0.1);
-    const formattedStartDate = lead.start_date
-      ? new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      : (lead.travel_dates || 'Flexible');
+    const formattedStartDate = getCleanTravelDates(lead);
 
     const vCat = (lead.vehicle_category || 'T').toUpperCase();
     const vCount = lead.vehicle_count || (lead.num_travelers ? Math.ceil(lead.num_travelers / (vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4)) : 1);
     const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
+
+    const formattedGuests = lead.children > 0
+      ? (() => {
+          let ages = '';
+          try {
+            const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+          } catch (e) {}
+          return `${lead.num_travelers || 1} Traveler(s) [${lead.adults || 1} Adult(s), ${lead.children} Child(ren)${ages}]`;
+        })()
+      : `${lead.num_travelers || 1} Traveler(s)`;
 
     let msg = `*TOUR QUOTATION & ITINERARY – Sandesh Travels* 🏔️✈️\n\n`;
     msg += `Dear *${lead.client_name}*,\n\n`;
@@ -1232,7 +1328,7 @@ export default function AdminDashboard() {
       msg += `• *Duration:* ${lead.total_days} Days / ${Math.max(1, lead.total_days - 1)} Nights\n`;
     }
     msg += `• *Journey Start Date:* ${formattedStartDate}\n`;
-    msg += `• *Guests:* ${lead.num_travelers || 1} Traveler(s)\n`;
+    msg += `• *Guests:* ${formattedGuests}\n`;
     msg += `• *Vehicle Allocated:* ${vCount}x ${vLabel}\n`;
     if (totalPrice > 0) {
       msg += `• *Total Package Cost:* Rs. ${totalPrice.toLocaleString('en-IN')}\n`;
@@ -2022,6 +2118,17 @@ export default function AdminDashboard() {
       }
     }
 
+    // Validate children ages if children > 0
+    if (newLeadChildren > 0) {
+      for (let i = 0; i < newLeadChildren; i++) {
+        const ageVal = newLeadChildAges[i];
+        if (ageVal === '' || ageVal === undefined || ageVal === null || isNaN(ageVal) || parseInt(ageVal, 10) < 0 || parseInt(ageVal, 10) > 17) {
+          setError(`Validation Error: Please enter a valid age (0 to 17 years) for Child ${i + 1}.`);
+          return;
+        }
+      }
+    }
+
     setActionLoading(true);
     const fullPhone = formatFullPhoneNumber(newLeadCountryCode, newLeadLocalPhone);
 
@@ -2034,6 +2141,9 @@ export default function AdminDashboard() {
           clientPhone: fullPhone,
           travelDates: newLeadDates,
           numTravelers: newLeadTravelers,
+          adults: newLeadAdults,
+          children: newLeadChildren,
+          childAges: newLeadChildren > 0 ? newLeadChildAges.map(a => parseInt(a, 10)) : [],
           startDate: newLeadStartDate || null,
           templateId: (selectedWalkInTemplateIds && selectedWalkInTemplateIds.length > 0) ? selectedWalkInTemplateIds[0] : null,
           templateIds: selectedWalkInTemplateIds,
@@ -2054,6 +2164,9 @@ export default function AdminDashboard() {
         setNewLeadName('');
         setNewLeadPhone('');
         setNewLeadDates('');
+        setNewLeadAdults(1);
+        setNewLeadChildren(0);
+        setNewLeadChildAges([]);
         setNewLeadTravelers(1);
         setNewLeadVehicleCategory('');
         setNewLeadStartDate('');
@@ -2648,7 +2761,16 @@ export default function AdminDashboard() {
                             </span>
                           </div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <span>{lead.num_travelers} guest(s)</span>
+                            <span title={lead.children > 0 ? (() => {
+                              let ages = '';
+                              try {
+                                const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+                                if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+                              } catch (e) {}
+                              return `${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${ages}`;
+                            })() : undefined}>
+                              {lead.num_travelers} guest(s) {lead.children > 0 ? `(${lead.adults || (lead.num_travelers - lead.children)}A, ${lead.children}C)` : ''}
+                            </span>
                             <span 
                               style={{
                                 fontSize: '0.7rem',
@@ -6027,8 +6149,9 @@ export default function AdminDashboard() {
                 </span>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                <div className="form-group">
+              {/* Journey Start Date & Guest Summary */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label>Start Date (Journey Date)</label>
                   <input 
                     type="date" 
@@ -6038,44 +6161,133 @@ export default function AdminDashboard() {
                     min={getTodayString()}
                   />
                 </div>
-                <div className="form-group">
-                  <label>Total Guests</label>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Total Guests</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--accent-teal)' }}>
+                      👥 {newLeadTravelers} {newLeadTravelers === 1 ? 'Guest' : 'Guests'}
+                    </span>
+                  </label>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '0.55rem 0.85rem',
+                    background: 'var(--bg-surface-elevated)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--border-radius-sm)',
+                    fontSize: '0.9rem',
+                    fontWeight: '600',
+                    color: '#FFF'
+                  }}>
+                    <span>{newLeadAdults} Adult{newLeadAdults > 1 ? 's' : ''}{newLeadChildren > 0 ? ` + ${newLeadChildren} Child${newLeadChildren > 1 ? 'ren' : ''}` : ''}</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Auto-calculated)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Adults & Children Inputs */}
+              <div style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '1fr 1fr', 
+                gap: '1rem', 
+                marginBottom: '1rem',
+                background: 'rgba(255,255,255,0.02)',
+                padding: '0.85rem',
+                borderRadius: 'var(--border-radius-sm)',
+                border: '1px solid var(--border)'
+              }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <i className="fa-solid fa-user" style={{ color: 'var(--secondary)' }}></i>
+                    No. of Adults *
+                  </label>
                   <input 
                     type="number" 
                     className="form-control"
                     min="1"
-                    value={newLeadTravelers}
-                    onChange={(e) => setNewLeadTravelers(parseInt(e.target.value) || 1)}
+                    value={newLeadAdults}
+                    onChange={(e) => handleAdultsChange(e.target.value)}
+                    placeholder="1"
                     required
                   />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                    Age 12+ years
+                  </span>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <i className="fa-solid fa-child" style={{ color: '#38bdf8' }}></i>
+                    No. of Children
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    min="0"
+                    max="10"
+                    value={newLeadChildren}
+                    onChange={(e) => handleChildrenChange(e.target.value)}
+                    placeholder="0"
+                  />
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                    Age 0-11 years (requires age)
+                  </span>
                 </div>
               </div>
 
-              {/* Preferred Sikkim Vehicle Category & Dynamic Capacity Calculator */}
+              {/* Children Ages Breakdown - Dynamic conditional fields */}
+              {newLeadChildren > 0 && (
+                <div style={{
+                  marginBottom: '1rem',
+                  background: 'rgba(56, 189, 248, 0.05)',
+                  border: '1px solid rgba(56, 189, 248, 0.25)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  padding: '0.85rem',
+                  animation: 'fadeIn 0.2s ease-in'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <i className="fa-solid fa-cake-candles"></i>
+                      Children Ages (Required) *
+                    </div>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                      Only children's age required
+                    </span>
+                  </div>
+                  <div style={{ 
+                    display: 'grid', 
+                    gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', 
+                    gap: '0.6rem' 
+                  }}>
+                    {Array.from({ length: newLeadChildren }).map((_, idx) => (
+                      <div key={idx} className="form-group" style={{ marginBottom: 0 }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>
+                          Child {idx + 1} Age (Yrs) *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="17"
+                          className="form-control"
+                          placeholder="e.g. 5"
+                          style={{ padding: '0.4rem 0.6rem', fontSize: '0.85rem' }}
+                          value={newLeadChildAges[idx] ?? ''}
+                          onChange={(e) => handleChildAgeChange(idx, e.target.value)}
+                          required
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Preferred Sikkim Vehicle Category */}
               <div className="form-group" style={{ background: 'rgba(255,255,255,0.02)', padding: '0.85rem', borderRadius: 'var(--border-radius-sm)', border: '1px solid var(--border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem', flexWrap: 'wrap', gap: '0.4rem' }}>
                   <label style={{ fontWeight: '600', color: '#FFF', margin: 0 }}>Client Preferred Vehicle Category</label>
-                  {newLeadVehicleCategory ? (() => {
-                    const cap = newLeadVehicleCategory === 'J' ? 8 : newLeadVehicleCategory === 'Z' ? 6 : 4;
-                    const count = Math.ceil(newLeadTravelers / cap);
-                    return (
-                      <span style={{ 
-                        fontSize: '0.75rem', 
-                        fontWeight: '700', 
-                        color: newLeadVehicleCategory === 'J' ? '#c084fc' : newLeadVehicleCategory === 'Z' ? '#fb923c' : '#34d399',
-                        background: newLeadVehicleCategory === 'J' ? 'rgba(168,85,247,0.1)' : newLeadVehicleCategory === 'Z' ? 'rgba(251,146,60,0.1)' : 'rgba(16,185,129,0.1)',
-                        padding: '0.2rem 0.5rem',
-                        borderRadius: '4px',
-                        border: `1px solid ${newLeadVehicleCategory === 'J' ? 'rgba(168,85,247,0.3)' : newLeadVehicleCategory === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
-                      }}>
-                        🚗 Required: {count}x {newLeadVehicleCategory}-Series ({count * cap} max pax)
-                      </span>
-                    );
-                  })() : (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                      (Choose category to calculate fleet)
-                    </span>
-                  )}
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    (Optional)
+                  </span>
                 </div>
                 <select
                   className="form-control"

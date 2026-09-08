@@ -85,6 +85,9 @@ export async function initDb() {
         client_phone VARCHAR(50) NOT NULL,
         travel_dates VARCHAR(100),
         num_travelers INT DEFAULT 1,
+        adults INT DEFAULT 1,
+        children INT DEFAULT 0,
+        child_ages JSONB DEFAULT '[]'::jsonb,
         status VARCHAR(20) DEFAULT 'new', -- 'new', 'quoted', 'converted', 'completed', 'cancelled'
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -174,6 +177,9 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS vehicle_category VARCHAR(10) DEFAULT 'T',
       ADD COLUMN IF NOT EXISTS vehicle_count INT DEFAULT 1,
       ADD COLUMN IF NOT EXISTS vehicle_preference_details VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS adults INT DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS children INT DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS child_ages JSONB DEFAULT '[]'::jsonb,
       ALTER COLUMN travel_dates TYPE TEXT,
       ALTER COLUMN client_phone TYPE VARCHAR(100),
       ALTER COLUMN client_name TYPE VARCHAR(255);
