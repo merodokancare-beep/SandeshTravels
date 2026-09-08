@@ -230,6 +230,7 @@ export default function AdminDashboard() {
   const [employeeReportMonth, setEmployeeReportMonth] = useState(new Date().getMonth());
   const [employeeReportYear, setEmployeeReportYear] = useState(new Date().getFullYear());
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState(null);
+  const [selectedLeadForDetails, setSelectedLeadForDetails] = useState(null);
 
   const SYSTEM_MODULES = [
     { key: 'crm', label: 'Leads CRM', icon: 'fa-address-book', desc: 'Manage incoming enquiries, attendee pickup & conversions' },
@@ -3117,6 +3118,26 @@ export default function AdminDashboard() {
                                   >
                                     <i className="fa-solid fa-pen-to-square"></i> Edit
                                   </Link>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedLeadForDetails(lead)}
+                                    className="btn btn-secondary"
+                                    style={{ 
+                                      padding: '0.35rem 0.55rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.3rem', 
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: '600',
+                                      background: 'rgba(56, 189, 248, 0.12)',
+                                      color: '#38BDF8',
+                                      borderColor: 'rgba(56, 189, 248, 0.4)'
+                                    }}
+                                    title="View Guest Details, Package Total & Financials"
+                                  >
+                                    <i className="fa-solid fa-eye"></i> View
+                                  </button>
                                   <Link
                                     href={`/itinerary/${lead.itinerary_id}`}
                                     target="_blank"
@@ -3135,6 +3156,7 @@ export default function AdminDashboard() {
                                   </Link>
                                 </>
                               ) : (
+                                <>
                                   <Link 
                                     href={`/admin/itinerary/${lead.id}`} 
                                     className="btn btn-primary"
@@ -3153,6 +3175,24 @@ export default function AdminDashboard() {
                                   >
                                     <i className="fa-solid fa-wand-magic-sparkles"></i> Build Itinerary
                                   </Link>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedLeadForDetails(lead)}
+                                    className="btn btn-secondary"
+                                    style={{ 
+                                      padding: '0.35rem 0.55rem', 
+                                      fontSize: '0.75rem', 
+                                      display: 'inline-flex', 
+                                      alignItems: 'center', 
+                                      gap: '0.3rem', 
+                                      whiteSpace: 'nowrap',
+                                      fontWeight: '600'
+                                    }}
+                                    title="View Guest Summary"
+                                  >
+                                    <i className="fa-solid fa-eye"></i> View
+                                  </button>
+                                </>
                               )
                             )}
 
@@ -3207,25 +3247,67 @@ export default function AdminDashboard() {
                                 >
                                   <i className="fa-solid fa-car"></i> Fleet Assign
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedLeadForDetails(lead)}
+                                  className="btn btn-secondary"
+                                  style={{ 
+                                    padding: '0.35rem 0.6rem', 
+                                    fontSize: '0.75rem', 
+                                    color: '#38BDF8', 
+                                    borderColor: 'rgba(56, 189, 248, 0.4)', 
+                                    background: 'rgba(56, 189, 248, 0.12)', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.3rem', 
+                                    whiteSpace: 'nowrap',
+                                    fontWeight: '600'
+                                  }}
+                                  title="View Guest Details, Package Total, Advance Paid & Balance Due"
+                                >
+                                  <i className="fa-solid fa-eye"></i> View
+                                </button>
                               </>
                             )}
 
                             {(lead.status === 'assigned' || lead.status === 'completed') && (
-                              <Link 
-                                href={`/admin/itinerary/${lead.id}`} 
-                                className="btn btn-secondary"
-                                style={{ 
-                                  padding: '0.35rem 0.55rem', 
-                                  fontSize: '0.75rem', 
-                                  color: 'var(--text-secondary)', 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  whiteSpace: 'nowrap' 
-                                }}
-                              >
-                                <i className="fa-solid fa-eye"></i> View Program
-                              </Link>
+                              <>
+                                <button 
+                                  type="button"
+                                  onClick={() => setSelectedLeadForDetails(lead)}
+                                  className="btn btn-secondary"
+                                  style={{ 
+                                    padding: '0.35rem 0.55rem', 
+                                    fontSize: '0.75rem', 
+                                    color: '#38BDF8', 
+                                    borderColor: 'rgba(56, 189, 248, 0.4)', 
+                                    background: 'rgba(56, 189, 248, 0.12)', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.3rem', 
+                                    whiteSpace: 'nowrap',
+                                    fontWeight: '600'
+                                  }}
+                                  title="View Guest Details, Package Total, Advance Paid & Balance Due"
+                                >
+                                  <i className="fa-solid fa-eye"></i> View
+                                </button>
+                                <Link 
+                                  href={`/admin/itinerary/${lead.id}`} 
+                                  className="btn btn-secondary"
+                                  style={{ 
+                                    padding: '0.35rem 0.55rem', 
+                                    fontSize: '0.75rem', 
+                                    color: 'var(--text-secondary)', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.3rem', 
+                                    whiteSpace: 'nowrap' 
+                                  }}
+                                >
+                                  <i className="fa-solid fa-pen-to-square"></i> Edit Itinerary
+                                </Link>
+                              </>
                             )}
 
                             {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
@@ -7267,6 +7349,288 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
+
+      {/* Guest Financial & Booking Details Modal */}
+      {selectedLeadForDetails && (() => {
+        const lead = leads.find(l => String(l.id) === String(selectedLeadForDetails.id)) || selectedLeadForDetails;
+        const srcInfo = getLeadSourceInfo(lead);
+        const totalPrice = parseFloat(lead.itinerary_price) || 0;
+        const advancePaid = parseFloat(lead.advance_paid) || 0;
+        const balanceDue = Math.max(0, totalPrice - advancePaid);
+        const advanceRequired = Math.round(totalPrice * 0.1);
+        const cleanPhone = lead.client_phone ? lead.client_phone.replace(/\D/g, '') : '';
+        const childAgesArray = (() => {
+          try {
+            const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+            return Array.isArray(parsed) ? parsed : [];
+          } catch (e) { return []; }
+        })();
+
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.78)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1100,
+            padding: '1rem'
+          }}>
+            <div className="animate-fade-in glass-card" style={{
+              maxWidth: '760px',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              padding: '1.75rem',
+              borderRadius: '14px',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)',
+              position: 'relative'
+            }}>
+              {/* Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.9rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                    <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.35rem', fontWeight: 700 }}>
+                      {lead.client_name}
+                    </h3>
+                    <span className={`badge badge-${lead.status}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
+                      {lead.status === 'assigned' ? 'FLEET ASSIGNED' : lead.status.toUpperCase()}
+                    </span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      Lead #{lead.id}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', marginTop: '0.35rem', flexWrap: 'wrap', fontSize: '0.85rem' }}>
+                    <a 
+                      href={`tel:${cleanPhone}`} 
+                      style={{ color: '#38BDF8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none' }}
+                      title="Click to call"
+                    >
+                      <i className="fa-solid fa-phone"></i> {lead.client_phone}
+                    </a>
+                    {lead.client_email && (
+                      <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                        <i className="fa-solid fa-envelope"></i> {lead.client_email}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedLeadForDetails(null)} 
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', fontSize: '1.3rem', width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* 3 Key Financial Cards */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.9rem', marginBottom: '1.25rem' }}>
+                {/* Total Package */}
+                <div style={{ background: 'linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(30, 58, 138, 0.15))', border: '1px solid rgba(56, 189, 248, 0.3)', borderRadius: '10px', padding: '1.1rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#38BDF8', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <i className="fa-solid fa-receipt"></i> Total Package Cost
+                  </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#FFF', marginTop: '0.3rem' }}>
+                    ₹{totalPrice.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    {lead.total_days ? `${lead.total_days} Days / ${Math.max(1, lead.total_days - 1)} Nights` : 'Custom tour program'}
+                  </div>
+                </div>
+
+                {/* Advance Paid */}
+                <div style={{ 
+                  background: advancePaid > 0 ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))' : 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(120, 53, 15, 0.15))', 
+                  border: `1px solid ${advancePaid > 0 ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`, 
+                  borderRadius: '10px', 
+                  padding: '1.1rem' 
+                }}>
+                  <div style={{ fontSize: '0.75rem', color: advancePaid > 0 ? '#34D399' : '#FBBF24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <i className="fa-solid fa-shield-check"></i> Advance Paid
+                    </span>
+                    {lead.payment_status === 'pending_verification' && (
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(245, 158, 11, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#FBBF24', fontWeight: 700 }}>Pending UTR</span>
+                    )}
+                    {advancePaid > 0 && lead.payment_status !== 'pending_verification' && (
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>Verified ✅</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: advancePaid > 0 ? '#34D399' : '#FBBF24', marginTop: '0.3rem' }}>
+                    ₹{advancePaid.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    10% Required: ₹{advanceRequired.toLocaleString('en-IN')}
+                  </div>
+                </div>
+
+                {/* Balance Due */}
+                <div style={{ 
+                  background: balanceDue > 0 ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.15))' : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))', 
+                  border: `1px solid ${balanceDue > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`, 
+                  borderRadius: '10px', 
+                  padding: '1.1rem' 
+                }}>
+                  <div style={{ fontSize: '0.75rem', color: balanceDue > 0 ? '#F87171' : '#34D399', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <i className="fa-solid fa-coins"></i> Balance Due
+                  </div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: balanceDue > 0 ? '#F87171' : '#34D399', marginTop: '0.3rem' }}>
+                    ₹{balanceDue.toLocaleString('en-IN')}
+                  </div>
+                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                    {balanceDue > 0 ? 'Payable on arrival' : 'Fully Settled ✅'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Lead Details Grid */}
+              <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1.15rem', marginBottom: '1.25rem' }}>
+                <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.9rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <i className="fa-solid fa-circle-info" style={{ color: 'var(--accent-teal, #14B8A6)' }}></i>
+                  Guest & Journey Specifications
+                </h4>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.9rem', fontSize: '0.83rem' }}>
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Travel Dates</span>
+                    <strong style={{ color: 'var(--accent-teal, #14B8A6)' }}>{getCleanTravelDates(lead)}</strong>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Package / Program</span>
+                    <strong style={{ color: '#38BDF8' }}>{lead.itinerary_title || lead.package_name || 'Custom Plan'}</strong>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Guests Breakdown</span>
+                    <strong style={{ color: '#FFF' }}>
+                      {lead.num_travelers} guest(s) {lead.children > 0 ? `(${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${childAgesArray.length > 0 ? ` - Ages: ${childAgesArray.join(', ')}` : ''})` : ''}
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Vehicle Allocated</span>
+                    <strong style={{ color: '#FFF' }}>
+                      🚗 {lead.vehicle_count || 1}x {lead.vehicle_category || 'T'}-Series ({lead.vehicle_category === 'J' ? '8-Seater Maxi Cab' : lead.vehicle_category === 'Z' ? '6-Seater MUV/SUV' : '4-Seater Hatchback/Sedan'})
+                    </strong>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Lead Source</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{srcInfo.sourceName || 'Direct Walk-in'}</span>
+                  </div>
+
+                  <div>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Staff / Attendee</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                      {lead.attended_by_name ? `Attended by ${lead.attended_by_name}` : 'Open / Unassigned'}
+                    </span>
+                  </div>
+
+                  {lead.transaction_ref && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Transaction UTR / Reference</span>
+                      <code style={{ color: '#FBBF24', fontSize: '0.8rem', background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>{lead.transaction_ref}</code>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Actions & Links */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1.1rem' }}>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+                  {lead.payment_status === 'pending_verification' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleVerifyAdvance(lead.id, lead.advance_paid);
+                      }}
+                      className="btn btn-primary"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: 'linear-gradient(135deg, #10B981, #059669)', border: 'none', color: '#FFF', fontWeight: 700 }}
+                    >
+                      <i className="fa-solid fa-check-double"></i> Verify Advance (₹{lead.advance_paid})
+                    </button>
+                  )}
+
+                  {lead.status !== 'completed' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleRecordManualAdvance(lead.id);
+                      }}
+                      className="btn btn-outline"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                      title="Update or record advance payment"
+                    >
+                      <i className="fa-solid fa-hand-holding-dollar"></i> {advancePaid > 0 ? 'Update Advance' : 'Log Advance'}
+                    </button>
+                  )}
+
+                  {cleanPhone && (
+                    <a
+                      href={lead.status === 'converted' ? getBookingConfirmationWhatsAppLink(lead) : getQuotationWhatsAppLink(lead)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', color: '#25D366', borderColor: 'rgba(37, 211, 102, 0.4)', background: 'rgba(37, 211, 102, 0.12)' }}
+                    >
+                      <i className="fa-brands fa-whatsapp"></i> WhatsApp
+                    </a>
+                  )}
+
+                  {lead.itinerary_id && (
+                    <Link
+                      href={`/itinerary/${lead.itinerary_id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', color: '#38BDF8', borderColor: 'rgba(56, 189, 248, 0.4)', background: 'rgba(56, 189, 248, 0.12)' }}
+                    >
+                      <i className="fa-solid fa-arrow-up-right-from-square"></i> Live Itinerary
+                    </Link>
+                  )}
+
+                  <Link
+                    href={`/admin/itinerary/${lead.id}`}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
+                  >
+                    <i className="fa-solid fa-pen-to-square"></i> Edit Itinerary
+                  </Link>
+
+                  {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
+                    <Link
+                      href={`/admin/invoice/${lead.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', color: '#38bdf8' }}
+                    >
+                      <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
+                    </Link>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setSelectedLeadForDetails(null)}
+                  style={{ padding: '0.4rem 1.1rem', fontSize: '0.82rem' }}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <ToastContainer toasts={toasts} onClose={removeToast} />
     </div>
