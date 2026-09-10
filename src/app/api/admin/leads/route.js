@@ -13,6 +13,11 @@ export async function POST(request) {
   return LeadController.adminCreateLead(request);
 }
 
+export async function DELETE(request) {
+  return LeadController.adminDeleteLead(request);
+}
+
 export async function autoCompleteEndedJourneys() {
   return LeadModel.autoCompleteEndedJourneys();
 }
+

@@ -42,6 +42,17 @@ export class LeadModel {
     return res.rows;
   }
 
+  static async delete(id, client = null) {
+    const q = client ? client.query.bind(client) : query;
+    const res = await q(
+      `DELETE FROM leads 
+       WHERE id = $1 
+       RETURNING *`,
+      [id]
+    );
+    return res.rows[0] || null;
+  }
+
   static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, adults = 1, children = 0, childAges = [], child_ages = null, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, vehicleCategory = 'T', vehicleCount = 1, vehiclePreferenceDetails = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const determinedSource = source || (partnerId ? 'partner' : 'direct');

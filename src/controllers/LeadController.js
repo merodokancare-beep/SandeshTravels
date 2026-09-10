@@ -681,5 +681,74 @@ export class LeadController {
       );
     }
   }
+
+  static async adminDeleteLead(request) {
+    try {
+      const session = await getAdminSession();
+      if (!session) {
+        return NextResponse.json(
+          { error: 'Unauthorized. Please log in as admin.' },
+          { status: 401 }
+        );
+      }
+
+      // Only Admin or Super Admin can delete leads
+      if (session.role !== 'admin' && session.role !== 'super_admin') {
+        return NextResponse.json(
+          { error: 'Forbidden: Only Administrator or Super Admin can delete leads.' },
+          { status: 403 }
+        );
+      }
+
+      const { searchParams } = new URL(request.url);
+      let leadId = searchParams.get('id') || searchParams.get('leadId');
+
+      if (!leadId) {
+        try {
+          const body = await request.json();
+          leadId = body.leadId || body.id;
+        } catch (e) {
+          // ignore
+        }
+      }
+
+      if (!leadId) {
+        return NextResponse.json(
+          { error: 'Lead ID is required.' },
+          { status: 400 }
+        );
+      }
+
+      const leadIdNum = parseInt(leadId, 10);
+      if (isNaN(leadIdNum)) {
+        return NextResponse.json(
+          { error: 'Invalid Lead ID.' },
+          { status: 400 }
+        );
+      }
+
+      const existingLead = await LeadModel.getById(leadIdNum);
+      if (!existingLead) {
+        return NextResponse.json(
+          { error: 'Lead not found.' },
+          { status: 404 }
+        );
+      }
+
+      await LeadModel.delete(leadIdNum);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Lead inquiry and associated records deleted successfully.'
+      });
+    } catch (error) {
+      console.error('LeadController adminDeleteLead error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error while deleting lead' },
+        { status: 500 }
+      );
+    }
+  }
 }
+
 

@@ -921,6 +921,37 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleDeleteLead = async (lead) => {
+    if (!lead || !lead.id) return;
+    if (!confirm(`Are you sure you want to permanently delete the lead for "${lead.client_name}" (${lead.client_phone || 'No phone'})?\n\nThis will permanently delete this inquiry, its associated itinerary, daily program schedules, and all linked records.`)) {
+      return;
+    }
+
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/admin/leads?id=${lead.id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccess(`Lead inquiry for "${lead.client_name}" deleted successfully.`);
+        if (selectedLeadForDetails && selectedLeadForDetails.id === lead.id) {
+          setSelectedLeadForDetails(null);
+        }
+        await fetchDashboardData();
+      } else {
+        setError(data.error || 'Failed to delete lead inquiry.');
+      }
+    } catch (err) {
+      console.error('Delete lead error:', err);
+      setError('Connection failure while deleting lead.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleOpenNewUserModal = () => {
     setEditingUser(null);
     setUserFormName('');
@@ -2743,7 +2774,7 @@ export default function AdminDashboard() {
                       <th style={{ width: '130px', minWidth: '130px' }}>Lead Source</th>
                       <th style={{ width: '140px', minWidth: '140px' }}>Attendee / Staff</th>
                       <th style={{ width: '230px', minWidth: '220px' }}>Status Tracking</th>
-                      <th style={{ width: '220px', minWidth: '200px', paddingRight: '0.75rem' }}>Actions</th>
+                      <th style={{ width: '270px', minWidth: '250px', paddingRight: '0.75rem' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3331,6 +3362,31 @@ export default function AdminDashboard() {
                               >
                                 <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
                               </Link>
+                            )}
+
+                            {/* Delete button: strictly available for Admin or Super Admin */}
+                            {(admin?.role === 'admin' || admin?.role === 'super_admin') && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLead(lead)}
+                                disabled={actionLoading}
+                                className="btn btn-secondary"
+                                style={{ 
+                                  padding: '0.35rem 0.55rem', 
+                                  fontSize: '0.75rem', 
+                                  display: 'inline-flex', 
+                                  alignItems: 'center', 
+                                  gap: '0.3rem', 
+                                  whiteSpace: 'nowrap',
+                                  fontWeight: '600',
+                                  color: '#EF4444',
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  borderColor: 'rgba(239, 68, 68, 0.35)'
+                                }}
+                                title={`Permanently delete lead for ${lead.client_name}`}
+                              >
+                                <i className="fa-solid fa-trash-can"></i> Delete
+                              </button>
                             )}
                           </div>
                         </td>
@@ -7615,6 +7671,19 @@ export default function AdminDashboard() {
                     >
                       <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
                     </Link>
+                  )}
+
+                  {(admin?.role === 'admin' || admin?.role === 'super_admin') && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteLead(lead)}
+                      disabled={actionLoading}
+                      className="btn btn-secondary"
+                      style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', color: '#EF4444', borderColor: 'rgba(239, 68, 68, 0.4)', background: 'rgba(239, 68, 68, 0.12)' }}
+                      title="Permanently Delete Lead Inquiry"
+                    >
+                      <i className="fa-solid fa-trash-can"></i> Delete Lead
+                    </button>
                   )}
                 </div>
 
