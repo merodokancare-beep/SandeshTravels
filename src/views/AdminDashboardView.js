@@ -3364,8 +3364,8 @@ export default function AdminDashboard() {
                               </Link>
                             )}
 
-                            {/* Delete button: strictly available for Admin or Super Admin */}
-                            {(admin?.role === 'admin' || admin?.role === 'super_admin') && (
+                            {/* Delete button: strictly available for Admin or Super Admin and only for New or Quoted leads */}
+                            {(admin?.role === 'admin' || admin?.role === 'super_admin') && (lead.status === 'new' || lead.status === 'quoted') && (
                               <button
                                 type="button"
                                 onClick={() => handleDeleteLead(lead)}
@@ -7673,7 +7673,7 @@ export default function AdminDashboard() {
                     </Link>
                   )}
 
-                  {(admin?.role === 'admin' || admin?.role === 'super_admin') && (
+                  {(admin?.role === 'admin' || admin?.role === 'super_admin') && (lead.status === 'new' || lead.status === 'quoted') && (
                     <button
                       type="button"
                       onClick={() => handleDeleteLead(lead)}

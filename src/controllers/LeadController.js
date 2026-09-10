@@ -735,6 +735,14 @@ export class LeadController {
         );
       }
 
+      // Restrict deletion strictly to 'new' and 'quoted' leads
+      if (existingLead.status !== 'new' && existingLead.status !== 'quoted') {
+        return NextResponse.json(
+          { error: `Cannot delete lead. Only leads with status "New" or "Quoted" can be deleted. Current status: "${existingLead.status}".` },
+          { status: 400 }
+        );
+      }
+
       await LeadModel.delete(leadIdNum);
 
       return NextResponse.json({
