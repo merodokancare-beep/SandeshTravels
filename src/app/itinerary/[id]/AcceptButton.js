@@ -86,8 +86,8 @@ export default function AcceptQuotationButton({
     }
   };
 
-  // State 1: Converted / Advance Verified & Booking Active
-  if (status === 'converted' || status === 'assigned' || paymentStatus === 'advance_paid') {
+  // State 1: Converted / Advance Verified & Booking Active / Settled / Completed
+  if (status === 'converted' || status === 'assigned' || status === 'completed' || paymentStatus === 'advance_paid' || paymentStatus === 'settled') {
     return (
       <div className="animate-fade-in glass-card" style={{
         background: 'linear-gradient(135deg, rgba(16,185,129,0.12) 0%, rgba(6,78,59,0.2) 100%)',

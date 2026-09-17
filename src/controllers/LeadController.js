@@ -106,7 +106,7 @@ export class LeadController {
       }
 
       // 2. Prevent setting 'converted' status manually if advance is not verified
-      if (status === 'converted' && existingLead.payment_status !== 'advance_paid') {
+      if (status === 'converted' && existingLead.payment_status !== 'advance_paid' && existingLead.payment_status !== 'settled') {
         await client.query('ROLLBACK');
         return NextResponse.json(
           { error: 'Cannot confirm booking: 10% Advance Deposit must be verified first.' },
@@ -636,6 +636,54 @@ export class LeadController {
       console.error('LeadController adminRecordManualAdvance error:', error);
       return NextResponse.json(
         { error: 'Internal server error while recording advance payment.' },
+        { status: 500 }
+      );
+    }
+  }
+
+  static async adminSettleLead(request) {
+    try {
+      const session = await getAdminSession();
+      if (!session) {
+        return NextResponse.json(
+          { error: 'Unauthorized. Please log in as admin.' },
+          { status: 401 }
+        );
+      }
+
+      const { leadId, isSettled = true, notes } = await request.json();
+
+      if (!leadId) {
+        return NextResponse.json(
+          { error: 'Lead ID is required.' },
+          { status: 400 }
+        );
+      }
+
+      const existingLead = await LeadModel.getById(leadId);
+      if (!existingLead) {
+        return NextResponse.json(
+          { error: 'Lead not found.' },
+          { status: 404 }
+        );
+      }
+
+      const newPaymentStatus = isSettled ? 'settled' : (parseFloat(existingLead.advance_paid) > 0 ? 'advance_paid' : 'unpaid');
+
+      const updatedLead = await LeadModel.update(leadId, {
+        paymentStatus: newPaymentStatus,
+        ...(notes ? { notes: existingLead.notes ? `${existingLead.notes}\n[Settlement]: ${notes}` : `[Settlement]: ${notes}` } : {})
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: isSettled ? 'Full balance marked as settled!' : 'Settlement status reverted to advance paid.',
+        lead: updatedLead
+      });
+    } catch (error) {
+      console.error('LeadController adminSettleLead error:', error);
+      return NextResponse.json(
+        { error: 'Internal server error while updating settlement status.' },
         { status: 500 }
       );
     }

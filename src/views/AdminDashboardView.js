@@ -1741,6 +1741,48 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleToggleSettlement = async (leadId, currentPaymentStatus) => {
+    const isCurrentlySettled = currentPaymentStatus === 'settled';
+    const confirmMsg = isCurrentlySettled
+      ? 'Are you sure you want to revert the settlement status back to pending balance?'
+      : 'Mark full payment settlement as received/settled for this booking?';
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId,
+          isSettled: !isCurrentlySettled
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(!isCurrentlySettled ? 'Full settlement marked as done! Balance due is now ₹0.' : 'Settlement status reverted.');
+        await fetchDashboardData();
+        setSelectedLeadForDetails(prev => {
+          if (!prev || String(prev.id) !== String(leadId)) return prev;
+          return {
+            ...prev,
+            payment_status: !isCurrentlySettled ? 'settled' : (parseFloat(prev.advance_paid) > 0 ? 'advance_paid' : 'unpaid')
+          };
+        });
+      } else {
+        setError(data.error || 'Failed to update settlement status.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while updating settlement.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleSaveCompanySettings = async (e) => {
     e.preventDefault();
     setError('');
@@ -3038,7 +3080,11 @@ export default function AdminDashboard() {
                               </div>
                             )}
 
-                            {lead.payment_status === 'pending_verification' ? (
+                            {lead.payment_status === 'settled' ? (
+                              <div style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                                <i className="fa-solid fa-circle-check"></i> Fully Settled ✅
+                              </div>
+                            ) : lead.payment_status === 'pending_verification' ? (
                               <div style={{
                                 background: 'rgba(245,158,11,0.15)',
                                 border: '1px solid rgba(251,191,36,0.3)',
@@ -3342,26 +3388,78 @@ export default function AdminDashboard() {
                             )}
 
                             {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
-                              <Link 
-                                href={`/admin/invoice/${lead.id}`} 
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="btn btn-secondary"
-                                style={{ 
-                                  padding: '0.35rem 0.55rem', 
-                                  fontSize: '0.75rem', 
-                                  color: '#38bdf8', 
-                                  display: 'inline-flex', 
-                                  alignItems: 'center', 
-                                  gap: '0.3rem', 
-                                  border: '1px solid rgba(56,189,248,0.3)', 
-                                  background: 'rgba(56,189,248,0.05)',
-                                  whiteSpace: 'nowrap'
-                                }}
-                                title="Generate & Print Bill Invoice"
-                              >
-                                <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
-                              </Link>
+                              <>
+                                <Link 
+                                  href={`/admin/invoice/${lead.id}`} 
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="btn btn-secondary"
+                                  style={{ 
+                                    padding: '0.35rem 0.55rem', 
+                                    fontSize: '0.75rem', 
+                                    color: '#38bdf8', 
+                                    display: 'inline-flex', 
+                                    alignItems: 'center', 
+                                    gap: '0.3rem', 
+                                    border: '1px solid rgba(56,189,248,0.3)', 
+                                    background: 'rgba(56,189,248,0.05)',
+                                    whiteSpace: 'nowrap'
+                                  }}
+                                  title="Generate & Print Bill Invoice"
+                                >
+                                  <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
+                                </Link>
+
+                                {lead.status === 'completed' && (
+                                  lead.payment_status === 'settled' ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                                      disabled={actionLoading}
+                                      className="btn btn-secondary"
+                                      style={{
+                                        padding: '0.35rem 0.55rem',
+                                        fontSize: '0.75rem',
+                                        color: '#34D399',
+                                        borderColor: 'rgba(52, 211, 153, 0.4)',
+                                        background: 'rgba(52, 211, 153, 0.12)',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.3rem',
+                                        whiteSpace: 'nowrap',
+                                        fontWeight: '600'
+                                      }}
+                                      title="Settlement Complete (Click to undo)"
+                                    >
+                                      <i className="fa-solid fa-circle-check"></i> Settled ✅
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                                      disabled={actionLoading}
+                                      className="btn"
+                                      style={{
+                                        padding: '0.35rem 0.6rem',
+                                        fontSize: '0.75rem',
+                                        background: 'linear-gradient(135deg, #10B981, #059669)',
+                                        color: '#FFF',
+                                        border: 'none',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '0.3rem',
+                                        whiteSpace: 'nowrap',
+                                        fontWeight: '700',
+                                        borderRadius: '4px',
+                                        boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
+                                      }}
+                                      title="Mark full balance settlement as received/completed"
+                                    >
+                                      <i className="fa-solid fa-receipt"></i> Settle
+                                    </button>
+                                  )
+                                )}
+                              </>
                             )}
 
                             {/* Delete button: strictly available for Admin or Super Admin and only for New or Quoted leads */}
@@ -7412,9 +7510,24 @@ export default function AdminDashboard() {
         const srcInfo = getLeadSourceInfo(lead);
         const totalPrice = parseFloat(lead.itinerary_price) || 0;
         const advancePaid = parseFloat(lead.advance_paid) || 0;
-        const balanceDue = Math.max(0, totalPrice - advancePaid);
+        const isSettled = lead.payment_status === 'settled';
+        const balanceDue = isSettled ? 0 : Math.max(0, totalPrice - advancePaid);
         const advanceRequired = Math.round(totalPrice * 0.1);
         const cleanPhone = lead.client_phone ? lead.client_phone.replace(/\D/g, '') : '';
+        const rawAdvanceDate = lead.advance_verified_at || lead.advance_submitted_at || lead.converted_at || (lead.payment_status === 'advance_paid' || lead.payment_status === 'settled' || advancePaid > 0 ? lead.created_at : null);
+        const advancePaymentDateStr = rawAdvanceDate ? (() => {
+          try {
+            const d = new Date(rawAdvanceDate);
+            if (isNaN(d.getTime())) return null;
+            return d.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            });
+          } catch (e) {
+            return null;
+          }
+        })() : null;
         const childAgesArray = (() => {
           try {
             const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
@@ -7459,6 +7572,11 @@ export default function AdminDashboard() {
                     <span className={`badge badge-${lead.status}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
                       {lead.status === 'assigned' ? 'FLEET ASSIGNED' : lead.status.toUpperCase()}
                     </span>
+                    {isSettled && (
+                      <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.25)', color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.4)', fontSize: '0.75rem', padding: '0.2rem 0.6rem', fontWeight: 700 }}>
+                        SETTLED ✅
+                      </span>
+                    )}
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       Lead #{lead.id}
                     </span>
@@ -7506,42 +7624,94 @@ export default function AdminDashboard() {
                   background: advancePaid > 0 ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))' : 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(120, 53, 15, 0.15))', 
                   border: `1px solid ${advancePaid > 0 ? 'rgba(16, 185, 129, 0.35)' : 'rgba(245, 158, 11, 0.35)'}`, 
                   borderRadius: '10px', 
-                  padding: '1.1rem' 
+                  padding: '1.1rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between'
                 }}>
-                  <div style={{ fontSize: '0.75rem', color: advancePaid > 0 ? '#34D399' : '#FBBF24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                      <i className="fa-solid fa-shield-check"></i> Advance Paid
-                    </span>
-                    {lead.payment_status === 'pending_verification' && (
-                      <span style={{ fontSize: '0.65rem', background: 'rgba(245, 158, 11, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#FBBF24', fontWeight: 700 }}>Pending UTR</span>
-                    )}
-                    {advancePaid > 0 && lead.payment_status !== 'pending_verification' && (
-                      <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>Verified ✅</span>
-                    )}
+                  <div>
+                    <div style={{ fontSize: '0.75rem', color: advancePaid > 0 ? '#34D399' : '#FBBF24', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <i className="fa-solid fa-shield-check"></i> Advance Paid
+                      </span>
+                      {lead.payment_status === 'pending_verification' && (
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(245, 158, 11, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#FBBF24', fontWeight: 700 }}>Pending UTR</span>
+                      )}
+                      {advancePaid > 0 && lead.payment_status !== 'pending_verification' && (
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>Verified ✅</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 800, color: advancePaid > 0 ? '#34D399' : '#FBBF24', marginTop: '0.3rem' }}>
+                      ₹{advancePaid.toLocaleString('en-IN')}
+                    </div>
+                    <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
+                      10% Required: ₹{advanceRequired.toLocaleString('en-IN')}
+                    </div>
                   </div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: advancePaid > 0 ? '#34D399' : '#FBBF24', marginTop: '0.3rem' }}>
-                    ₹{advancePaid.toLocaleString('en-IN')}
-                  </div>
-                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                    10% Required: ₹{advanceRequired.toLocaleString('en-IN')}
-                  </div>
+
+                  {/* Advance Payment Date & Payment Mode Details */}
+                  {(advancePaid > 0 || lead.payment_status === 'pending_verification') && (
+                    <div style={{ 
+                      marginTop: '0.6rem', 
+                      paddingTop: '0.5rem', 
+                      borderTop: '1px dashed rgba(255,255,255,0.12)', 
+                      fontSize: '0.72rem', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '0.25rem' 
+                    }}>
+                      {advancePaymentDateStr && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#E2E8F0' }}>
+                          <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <i className="fa-regular fa-calendar-check" style={{ color: '#34D399' }}></i> Date:
+                          </span>
+                          <strong style={{ color: '#FFF' }}>{advancePaymentDateStr}</strong>
+                        </div>
+                      )}
+                      {lead.payment_method && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#E2E8F0' }}>
+                          <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <i className="fa-solid fa-credit-card" style={{ color: '#38BDF8' }}></i> Mode:
+                          </span>
+                          <span style={{ textTransform: 'capitalize', color: '#38BDF8', fontWeight: 600 }}>
+                            {lead.payment_method.replace(/_/g, ' ')}
+                          </span>
+                        </div>
+                      )}
+                      {lead.transaction_ref && (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#E2E8F0' }}>
+                          <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                            <i className="fa-solid fa-hashtag" style={{ color: '#FBBF24' }}></i> Ref/UTR:
+                          </span>
+                          <code style={{ background: 'rgba(0,0,0,0.3)', padding: '0.05rem 0.35rem', borderRadius: '3px', color: '#FBBF24', fontSize: '0.7rem' }}>
+                            {lead.transaction_ref}
+                          </code>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Balance Due */}
                 <div style={{ 
-                  background: balanceDue > 0 ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.15))' : 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))', 
-                  border: `1px solid ${balanceDue > 0 ? 'rgba(239, 68, 68, 0.35)' : 'rgba(16, 185, 129, 0.35)'}`, 
+                  background: isSettled || balanceDue === 0 ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))' : 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.15))', 
+                  border: `1px solid ${isSettled || balanceDue === 0 ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`, 
                   borderRadius: '10px', 
                   padding: '1.1rem' 
                 }}>
-                  <div style={{ fontSize: '0.75rem', color: balanceDue > 0 ? '#F87171' : '#34D399', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <i className="fa-solid fa-coins"></i> Balance Due
+                  <div style={{ fontSize: '0.75rem', color: isSettled || balanceDue === 0 ? '#34D399' : '#F87171', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <i className="fa-solid fa-coins"></i> Balance Due
+                    </span>
+                    {isSettled && (
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>Settled ✅</span>
+                    )}
                   </div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: balanceDue > 0 ? '#F87171' : '#34D399', marginTop: '0.3rem' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isSettled || balanceDue === 0 ? '#34D399' : '#F87171', marginTop: '0.3rem' }}>
                     ₹{balanceDue.toLocaleString('en-IN')}
                   </div>
                   <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                    {balanceDue > 0 ? 'Payable on arrival' : 'Fully Settled ✅'}
+                    {isSettled ? 'Full Payment Settled ✅' : balanceDue > 0 ? 'Payable on arrival' : 'Fully Settled ✅'}
                   </div>
                 </div>
               </div>
@@ -7590,6 +7760,13 @@ export default function AdminDashboard() {
                     </span>
                   </div>
 
+                  {advancePaymentDateStr && (
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Advance Payment Date</span>
+                      <strong style={{ color: '#34D399' }}>📅 {advancePaymentDateStr}</strong>
+                    </div>
+                  )}
+
                   {lead.transaction_ref && (
                     <div>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Transaction UTR / Reference</span>
@@ -7626,6 +7803,32 @@ export default function AdminDashboard() {
                       title="Update or record advance payment"
                     >
                       <i className="fa-solid fa-hand-holding-dollar"></i> {advancePaid > 0 ? 'Update Advance' : 'Log Advance'}
+                    </button>
+                  )}
+
+                  {/* Mark Settlement Made / Settled Toggle */}
+                  {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
+                    <button
+                      type="button"
+                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                      disabled={actionLoading}
+                      className="btn"
+                      style={{
+                        padding: '0.4rem 0.85rem',
+                        fontSize: '0.8rem',
+                        background: isSettled ? 'rgba(16, 185, 129, 0.15)' : 'linear-gradient(135deg, #10B981, #059669)',
+                        border: isSettled ? '1px solid rgba(16, 185, 129, 0.4)' : 'none',
+                        color: isSettled ? '#34D399' : '#FFF',
+                        fontWeight: 700,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        borderRadius: '6px'
+                      }}
+                      title={isSettled ? "Settlement complete (Click to undo)" : "Mark full balance as settled / received"}
+                    >
+                      <i className={`fa-solid ${isSettled ? 'fa-circle-check' : 'fa-handshake-angle'}`}></i>
+                      {isSettled ? 'Settled ✅ (Undo)' : 'Mark Settlement Made'}
                     </button>
                   )}
 
