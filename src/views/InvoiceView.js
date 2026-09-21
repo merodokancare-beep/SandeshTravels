@@ -276,15 +276,15 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
             <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '0.2rem', fontWeight: '500' }}>Date: <strong>{invoice.invoiceDate}</strong></div>
             <div style={{ marginTop: '0.6rem' }}>
               <span className="badge-print" style={{
-                background: invoice.client.status === 'completed' ? '#dcfce7' : '#fef9c3',
-                color: invoice.client.status === 'completed' ? '#15803d' : '#a16207',
-                border: `1px solid ${invoice.client.status === 'completed' ? '#86efac' : '#fde047'}`,
+                background: invoice.billing?.paymentStatus?.includes('SETTLED') ? '#dcfce7' : invoice.billing?.paymentStatus?.includes('PARTIALLY') ? '#fef3c7' : '#fef9c3',
+                color: invoice.billing?.paymentStatus?.includes('SETTLED') ? '#15803d' : invoice.billing?.paymentStatus?.includes('PARTIALLY') ? '#b45309' : '#a16207',
+                border: `1px solid ${invoice.billing?.paymentStatus?.includes('SETTLED') ? '#86efac' : invoice.billing?.paymentStatus?.includes('PARTIALLY') ? '#fde68a' : '#fde047'}`,
                 padding: '0.35rem 0.8rem',
                 borderRadius: '20px',
                 fontSize: '0.78rem',
                 fontWeight: '700'
               }}>
-                <i className={`fa-solid ${invoice.client.status === 'completed' ? 'fa-circle-check' : 'fa-clock'}`} style={{ marginRight: '0.35rem' }}></i>
+                <i className={`fa-solid ${invoice.billing?.paymentStatus?.includes('SETTLED') ? 'fa-circle-check' : invoice.billing?.paymentStatus?.includes('PARTIALLY') ? 'fa-circle-exclamation' : 'fa-clock'}`} style={{ marginRight: '0.35rem' }}></i>
                 {invoice.billing.paymentStatus}
               </span>
             </div>
@@ -457,6 +457,25 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               <strong>₹{(invoice.billing?.advancePaid || Math.round(computedTotal * 0.1)).toLocaleString('en-IN')}</strong>
             </div>
 
+            {parseFloat(invoice.billing?.settlementAmount) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#0369a1' }}>
+                <span>
+                  Settlement Received {invoice.billing?.settlementMethod ? `(${invoice.billing.settlementMethod.toUpperCase()})` : ''}
+                  {invoice.billing?.settlementRef ? ` (UTR: ${invoice.billing.settlementRef})` : ''}:
+                </span>
+                <strong>₹{parseFloat(invoice.billing.settlementAmount).toLocaleString('en-IN')}</strong>
+              </div>
+            )}
+
+            {parseFloat(invoice.billing?.settlementDiscount) > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#b91c1c' }}>
+                <span>
+                  Adjustment / Waiver {invoice.billing?.settlementReason ? `(${invoice.billing.settlementReason})` : ''}:
+                </span>
+                <strong>- ₹{parseFloat(invoice.billing.settlementDiscount).toLocaleString('en-IN')}</strong>
+              </div>
+            )}
+
             <div style={{
               display: 'flex',
               justifyContent: 'space-between',
@@ -468,9 +487,11 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               marginTop: '0.8rem',
               fontSize: '1.1rem'
             }}>
-              <span style={{ fontWeight: '700' }}>Balance Due on Arrival:</span>
-              <strong style={{ color: '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>
-                ₹{(invoice.client.status === 'completed' ? 0 : Math.max(0, computedTotal - (invoice.billing?.advancePaid || Math.round(computedTotal * 0.1)))).toLocaleString('en-IN')}
+              <span style={{ fontWeight: '700' }}>
+                {invoice.billing?.balanceDue === 0 ? 'Remaining Balance:' : 'Balance Due on Arrival:'}
+              </span>
+              <strong style={{ color: invoice.billing?.balanceDue === 0 ? '#34d399' : '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>
+                ₹{(invoice.billing?.balanceDue !== undefined ? invoice.billing.balanceDue : (invoice.client.status === 'completed' ? 0 : Math.max(0, computedTotal - (invoice.billing?.advancePaid || Math.round(computedTotal * 0.1))))).toLocaleString('en-IN')}
               </strong>
             </div>
           </div>

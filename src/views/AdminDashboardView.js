@@ -231,6 +231,16 @@ export default function AdminDashboard() {
   const [employeeReportYear, setEmployeeReportYear] = useState(new Date().getFullYear());
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState(null);
   const [selectedLeadForDetails, setSelectedLeadForDetails] = useState(null);
+  const [settlementModalLead, setSettlementModalLead] = useState(null);
+  const [settlementForm, setSettlementForm] = useState({
+    settlementType: 'full',
+    amount: '',
+    discount: '0',
+    reason: '',
+    paymentMethod: 'upi_qr',
+    transactionRef: '',
+    settlementDate: new Date().toISOString().split('T')[0]
+  });
 
   const SYSTEM_MODULES = [
     { key: 'crm', label: 'Leads CRM', icon: 'fa-address-book', desc: 'Manage incoming enquiries, attendee pickup & conversions' },
@@ -1741,13 +1751,35 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleToggleSettlement = async (leadId, currentPaymentStatus) => {
-    const isCurrentlySettled = currentPaymentStatus === 'settled';
-    const confirmMsg = isCurrentlySettled
-      ? 'Are you sure you want to revert the settlement status back to pending balance?'
-      : 'Mark full payment settlement as received/settled for this booking?';
+  const handleOpenSettlementModal = (targetLead) => {
+    if (!targetLead) return;
+    const freshLead = leads.find(l => String(l.id) === String(targetLead.id)) || targetLead;
+    const totalPrice = parseFloat(freshLead.itinerary_price) || 0;
+    const advancePaid = parseFloat(freshLead.advance_paid) || 0;
+    const prevSettlementPaid = parseFloat(freshLead.settlement_amount) || 0;
+    const prevDiscount = parseFloat(freshLead.settlement_discount) || 0;
+    const balanceRemaining = Math.max(0, totalPrice - advancePaid - prevSettlementPaid - prevDiscount);
 
-    if (!window.confirm(confirmMsg)) return;
+    setSettlementModalLead(freshLead);
+    setSettlementForm({
+      settlementType: freshLead.payment_status === 'partially_settled' ? 'partial_pending' : 'full',
+      amount: balanceRemaining > 0 ? String(balanceRemaining) : '0',
+      discount: '0',
+      reason: freshLead.settlement_reason || '',
+      paymentMethod: freshLead.settlement_method || freshLead.payment_method || 'upi_qr',
+      transactionRef: freshLead.settlement_ref || '',
+      settlementDate: new Date().toISOString().split('T')[0]
+    });
+  };
+
+  const handleCloseSettlementModal = () => {
+    setSettlementModalLead(null);
+  };
+
+  const handleRevertSettlement = async (leadId) => {
+    if (!window.confirm('Are you sure you want to revert the settlement status back to pending balance? This will restore the outstanding balance due.')) {
+      return;
+    }
 
     setError('');
     setSuccess('');
@@ -1758,28 +1790,122 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           leadId,
-          isSettled: !isCurrentlySettled
+          action: 'revert',
+          isSettled: false
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess(!isCurrentlySettled ? 'Full settlement marked as done! Balance due is now ₹0.' : 'Settlement status reverted.');
+        setSuccess('Settlement status reverted back to pending balance.');
         await fetchDashboardData();
         setSelectedLeadForDetails(prev => {
           if (!prev || String(prev.id) !== String(leadId)) return prev;
           return {
             ...prev,
-            payment_status: !isCurrentlySettled ? 'settled' : (parseFloat(prev.advance_paid) > 0 ? 'advance_paid' : 'unpaid')
+            payment_status: parseFloat(prev.advance_paid) > 0 ? 'advance_paid' : 'unpaid',
+            settlement_amount: 0,
+            settlement_discount: 0,
+            settlement_reason: null,
+            settlement_method: null,
+            settlement_ref: null,
+            settled_at: null,
+            settled_by: null,
+            settled_by_name: null
           };
         });
       } else {
-        setError(data.error || 'Failed to update settlement status.');
+        setError(data.error || 'Failed to revert settlement status.');
       }
     } catch (err) {
       console.error(err);
-      setError('Connection failure while updating settlement.');
+      setError('Connection failure while reverting settlement.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleSubmitSettlement = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!settlementModalLead) return;
+
+    const parsedAmount = parseFloat(settlementForm.amount) || 0;
+    const totalPrice = parseFloat(settlementModalLead.itinerary_price) || 0;
+    const advancePaid = parseFloat(settlementModalLead.advance_paid) || 0;
+    const prevSettlementPaid = parseFloat(settlementModalLead.settlement_amount) || 0;
+    const prevDiscount = parseFloat(settlementModalLead.settlement_discount) || 0;
+    const balanceBefore = Math.max(0, totalPrice - advancePaid - prevSettlementPaid - prevDiscount);
+
+    const parsedDiscount = settlementForm.settlementType === 'partial_settled'
+      ? Math.max(0, balanceBefore - parsedAmount)
+      : (parseFloat(settlementForm.discount) || 0);
+
+    if (settlementForm.settlementType === 'partial_settled') {
+      if (isNaN(parsedAmount) || parsedAmount < 0) {
+        setError('Please enter a valid partial settlement amount received.');
+        return;
+      }
+      if (!settlementForm.reason || !settlementForm.reason.trim()) {
+        setError('A specific reason or justification is required for partial settlement / discount waiver.');
+        return;
+      }
+    } else if (settlementForm.settlementType === 'partial_pending') {
+      if (isNaN(parsedAmount) || parsedAmount <= 0) {
+        setError('Please enter a valid partial payment amount.');
+        return;
+      }
+    }
+
+    setError('');
+    setSuccess('');
+    setActionLoading(true);
+    try {
+      const res = await fetch('/api/admin/leads/settle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          leadId: settlementModalLead.id,
+          action: 'settle',
+          settlementType: settlementForm.settlementType,
+          amount: parsedAmount,
+          discount: parsedDiscount,
+          reason: settlementForm.reason.trim(),
+          paymentMethod: settlementForm.paymentMethod,
+          transactionRef: settlementForm.transactionRef.trim(),
+          settlementDate: settlementForm.settlementDate
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setSuccess(data.message || 'Payment settlement recorded successfully!');
+        await fetchDashboardData();
+        if (data.lead) {
+          setSelectedLeadForDetails(prev => {
+            if (!prev || String(prev.id) !== String(settlementModalLead.id)) return prev;
+            return {
+              ...prev,
+              ...data.lead
+            };
+          });
+        }
+        setSettlementModalLead(null);
+      } else {
+        setError(data.error || 'Failed to record settlement.');
+      }
+    } catch (err) {
+      console.error(err);
+      setError('Connection failure while recording settlement.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleToggleSettlement = (leadId, currentPaymentStatus) => {
+    const isCurrentlySettled = currentPaymentStatus === 'settled';
+    if (isCurrentlySettled) {
+      handleRevertSettlement(leadId);
+    } else {
+      const target = leads.find(l => String(l.id) === String(leadId)) || { id: leadId, payment_status: currentPaymentStatus };
+      handleOpenSettlementModal(target);
     }
   };
 
@@ -3081,8 +3207,48 @@ export default function AdminDashboard() {
                             )}
 
                             {lead.payment_status === 'settled' ? (
-                              <div style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                                <i className="fa-solid fa-circle-check"></i> Fully Settled ✅
+                              parseFloat(lead.settlement_discount) > 0 ? (
+                                <div style={{
+                                  background: 'rgba(239, 68, 68, 0.12)',
+                                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                                  borderRadius: '4px',
+                                  padding: '0.2rem 0.45rem',
+                                  fontSize: '0.73rem',
+                                  color: '#F87171',
+                                  display: 'flex',
+                                  flexDirection: 'column',
+                                  gap: '2px'
+                                }}>
+                                  <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                    <i className="fa-solid fa-triangle-exclamation"></i> Shortfall Closed
+                                  </div>
+                                  <div style={{ fontSize: '0.67rem', color: '#FCA5A5' }}>
+                                    Unpaid: -₹{parseFloat(lead.settlement_discount).toLocaleString('en-IN')}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: '0.75rem', color: '#34D399', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.3rem', flexWrap: 'wrap' }}>
+                                  <i className="fa-solid fa-circle-check"></i> 100% Settled ✅
+                                </div>
+                              )
+                            ) : lead.payment_status === 'partially_settled' ? (
+                              <div style={{
+                                background: 'rgba(245,158,11,0.12)',
+                                border: '1px solid rgba(251,191,36,0.3)',
+                                borderRadius: '4px',
+                                padding: '0.2rem 0.45rem',
+                                fontSize: '0.73rem',
+                                color: '#FBBF24',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '2px'
+                              }}>
+                                <div style={{ fontWeight: '700', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <i className="fa-solid fa-clock-rotate-left"></i> Partial Paid: ₹{(parseFloat(lead.advance_paid) || 0) + (parseFloat(lead.settlement_amount) || 0)}
+                                </div>
+                                <div style={{ fontSize: '0.68rem', color: '#FFF' }}>
+                                  Due: ₹{Math.max(0, (parseFloat(lead.itinerary_price) || 0) - (parseFloat(lead.advance_paid) || 0) - (parseFloat(lead.settlement_amount) || 0) - (parseFloat(lead.settlement_discount) || 0)).toLocaleString('en-IN')}
+                                </div>
                               </div>
                             ) : lead.payment_status === 'pending_verification' ? (
                               <div style={{
@@ -3410,33 +3576,81 @@ export default function AdminDashboard() {
                                   <i className="fa-solid fa-file-invoice-dollar"></i> Invoice
                                 </Link>
 
-                                {lead.status === 'completed' && (
+                                {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
                                   lead.payment_status === 'settled' ? (
+                                    parseFloat(lead.settlement_discount) > 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenSettlementModal(lead)}
+                                        disabled={actionLoading}
+                                        className="btn btn-secondary"
+                                        style={{
+                                          padding: '0.35rem 0.55rem',
+                                          fontSize: '0.75rem',
+                                          color: '#F87171',
+                                          borderColor: 'rgba(239, 68, 68, 0.4)',
+                                          background: 'rgba(239, 68, 68, 0.12)',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.3rem',
+                                          whiteSpace: 'nowrap',
+                                          fontWeight: '600'
+                                        }}
+                                        title={`Shortfall Closed (-₹${parseFloat(lead.settlement_discount).toLocaleString('en-IN')} unpaid) - Click to view/adjust`}
+                                      >
+                                        <i className="fa-solid fa-triangle-exclamation"></i> Shortfall ⚠️
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                                        disabled={actionLoading}
+                                        className="btn btn-secondary"
+                                        style={{
+                                          padding: '0.35rem 0.55rem',
+                                          fontSize: '0.75rem',
+                                          color: '#34D399',
+                                          borderColor: 'rgba(52, 211, 153, 0.4)',
+                                          background: 'rgba(52, 211, 153, 0.12)',
+                                          display: 'inline-flex',
+                                          alignItems: 'center',
+                                          gap: '0.3rem',
+                                          whiteSpace: 'nowrap',
+                                          fontWeight: '600'
+                                        }}
+                                        title="100% Full Settlement Complete (Click to undo)"
+                                      >
+                                        <i className="fa-solid fa-circle-check"></i> 100% Settled ✅
+                                      </button>
+                                    )
+                                  ) : lead.payment_status === 'partially_settled' ? (
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                                      onClick={() => handleOpenSettlementModal(lead)}
                                       disabled={actionLoading}
-                                      className="btn btn-secondary"
+                                      className="btn"
                                       style={{
                                         padding: '0.35rem 0.55rem',
                                         fontSize: '0.75rem',
-                                        color: '#34D399',
-                                        borderColor: 'rgba(52, 211, 153, 0.4)',
-                                        background: 'rgba(52, 211, 153, 0.12)',
+                                        background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                                        color: '#FFF',
+                                        border: 'none',
                                         display: 'inline-flex',
                                         alignItems: 'center',
                                         gap: '0.3rem',
                                         whiteSpace: 'nowrap',
-                                        fontWeight: '600'
+                                        fontWeight: '700',
+                                        borderRadius: '4px',
+                                        boxShadow: '0 2px 8px rgba(245,158,11,0.3)'
                                       }}
-                                      title="Settlement Complete (Click to undo)"
+                                      title="Partial payment made - collect remaining balance"
                                     >
-                                      <i className="fa-solid fa-circle-check"></i> Settled ✅
+                                      <i className="fa-solid fa-clock-rotate-left"></i> Partial ⚠️
                                     </button>
                                   ) : (
                                     <button
                                       type="button"
-                                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
+                                      onClick={() => handleOpenSettlementModal(lead)}
                                       disabled={actionLoading}
                                       className="btn"
                                       style={{
@@ -3453,7 +3667,7 @@ export default function AdminDashboard() {
                                         borderRadius: '4px',
                                         boxShadow: '0 2px 8px rgba(16,185,129,0.3)'
                                       }}
-                                      title="Mark full balance settlement as received/completed"
+                                      title="Record full or partial balance settlement"
                                     >
                                       <i className="fa-solid fa-receipt"></i> Settle
                                     </button>
@@ -7510,11 +7724,14 @@ export default function AdminDashboard() {
         const srcInfo = getLeadSourceInfo(lead);
         const totalPrice = parseFloat(lead.itinerary_price) || 0;
         const advancePaid = parseFloat(lead.advance_paid) || 0;
+        const settlementAmount = parseFloat(lead.settlement_amount) || 0;
+        const settlementDiscount = parseFloat(lead.settlement_discount) || 0;
         const isSettled = lead.payment_status === 'settled';
-        const balanceDue = isSettled ? 0 : Math.max(0, totalPrice - advancePaid);
+        const isPartiallySettled = lead.payment_status === 'partially_settled';
+        const balanceDue = isSettled ? 0 : Math.max(0, totalPrice - advancePaid - settlementAmount - settlementDiscount);
         const advanceRequired = Math.round(totalPrice * 0.1);
         const cleanPhone = lead.client_phone ? lead.client_phone.replace(/\D/g, '') : '';
-        const rawAdvanceDate = lead.advance_verified_at || lead.advance_submitted_at || lead.converted_at || (lead.payment_status === 'advance_paid' || lead.payment_status === 'settled' || advancePaid > 0 ? lead.created_at : null);
+        const rawAdvanceDate = lead.advance_verified_at || lead.advance_submitted_at || lead.converted_at || (lead.payment_status === 'advance_paid' || lead.payment_status === 'settled' || lead.payment_status === 'partially_settled' || advancePaid > 0 ? lead.created_at : null);
         const advancePaymentDateStr = rawAdvanceDate ? (() => {
           try {
             const d = new Date(rawAdvanceDate);
@@ -7572,11 +7789,22 @@ export default function AdminDashboard() {
                     <span className={`badge badge-${lead.status}`} style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}>
                       {lead.status === 'assigned' ? 'FLEET ASSIGNED' : lead.status.toUpperCase()}
                     </span>
-                    {isSettled && (
-                      <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.25)', color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.4)', fontSize: '0.75rem', padding: '0.2rem 0.6rem', fontWeight: 700 }}>
-                        SETTLED ✅
+                    {isSettled ? (
+                      settlementDiscount > 0 ? (
+                        <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.18)', color: '#F87171', border: '1px solid rgba(239, 68, 68, 0.4)', fontSize: '0.75rem', padding: '0.2rem 0.6rem', fontWeight: 700 }}>
+                          <i className="fa-solid fa-triangle-exclamation" style={{ marginRight: '0.3rem' }}></i>
+                          SHORTFALL CLOSED (-₹{settlementDiscount.toLocaleString('en-IN')})
+                        </span>
+                      ) : (
+                        <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.25)', color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.4)', fontSize: '0.75rem', padding: '0.2rem 0.6rem', fontWeight: 700 }}>
+                          100% FULLY SETTLED ✅
+                        </span>
+                      )
+                    ) : isPartiallySettled ? (
+                      <span className="badge" style={{ background: 'rgba(245, 158, 11, 0.25)', color: '#FBBF24', border: '1px solid rgba(245, 158, 11, 0.4)', fontSize: '0.75rem', padding: '0.2rem 0.6rem', fontWeight: 700 }}>
+                        PARTIAL SETTLED ⚠️
                       </span>
-                    )}
+                    ) : null}
                     <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                       Lead #{lead.id}
                     </span>
@@ -7694,27 +7922,136 @@ export default function AdminDashboard() {
 
                 {/* Balance Due */}
                 <div style={{ 
-                  background: isSettled || balanceDue === 0 ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))' : 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.15))', 
-                  border: `1px solid ${isSettled || balanceDue === 0 ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`, 
+                  background: isSettled && settlementDiscount > 0
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.14), rgba(127, 29, 29, 0.2))'
+                    : isSettled || balanceDue === 0 
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.12), rgba(6, 95, 70, 0.15))' 
+                    : 'linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(127, 29, 29, 0.15))', 
+                  border: `1px solid ${isSettled && settlementDiscount > 0 ? 'rgba(239, 68, 68, 0.4)' : isSettled || balanceDue === 0 ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}`, 
                   borderRadius: '10px', 
                   padding: '1.1rem' 
                 }}>
-                  <div style={{ fontSize: '0.75rem', color: isSettled || balanceDue === 0 ? '#34D399' : '#F87171', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontSize: '0.75rem', color: isSettled && settlementDiscount > 0 ? '#F87171' : isSettled || balanceDue === 0 ? '#34D399' : '#F87171', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                       <i className="fa-solid fa-coins"></i> Balance Due
                     </span>
-                    {isSettled && (
-                      <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>Settled ✅</span>
-                    )}
+                    {isSettled ? (
+                      settlementDiscount > 0 ? (
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(239, 68, 68, 0.25)', padding: '0.1rem 0.45rem', borderRadius: '3px', color: '#F87171', fontWeight: 700 }}>
+                          Shortfall Closed ⚠️
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: '0.65rem', background: 'rgba(16, 185, 129, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#34D399', fontWeight: 700 }}>100% Settled ✅</span>
+                      )
+                    ) : isPartiallySettled ? (
+                      <span style={{ fontSize: '0.65rem', background: 'rgba(245, 158, 11, 0.25)', padding: '0.1rem 0.4rem', borderRadius: '3px', color: '#FBBF24', fontWeight: 700 }}>Balance Pending ⚠️</span>
+                    ) : null}
                   </div>
-                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isSettled || balanceDue === 0 ? '#34D399' : '#F87171', marginTop: '0.3rem' }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: isSettled && settlementDiscount > 0 ? '#F87171' : isSettled || balanceDue === 0 ? '#34D399' : '#F87171', marginTop: '0.3rem' }}>
                     ₹{balanceDue.toLocaleString('en-IN')}
                   </div>
-                  <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                    {isSettled ? 'Full Payment Settled ✅' : balanceDue > 0 ? 'Payable on arrival' : 'Fully Settled ✅'}
+                  <div style={{ fontSize: '0.73rem', marginTop: '0.2rem' }}>
+                    {isSettled ? (
+                      settlementDiscount > 0 ? (
+                        <span style={{ color: '#F87171', fontWeight: 600 }}>
+                          ⚠️ ₹{settlementDiscount.toLocaleString('en-IN')} not paid by customer (Closed)
+                        </span>
+                      ) : (
+                        <span style={{ color: '#34D399' }}>100% Full Payment Settled ✅</span>
+                      )
+                    ) : balanceDue > 0 ? (
+                      <span style={{ color: 'var(--text-muted)' }}>Payable on arrival</span>
+                    ) : (
+                      <span style={{ color: '#34D399' }}>Fully Settled ✅</span>
+                    )}
                   </div>
                 </div>
               </div>
+
+              {/* Settlement Clearance / Adjustment Information Banner (if settled or partially settled) */}
+              {(isSettled || isPartiallySettled || settlementAmount > 0 || settlementDiscount > 0) && (
+                <div style={{
+                  background: settlementDiscount > 0
+                    ? 'linear-gradient(135deg, rgba(239, 68, 68, 0.08), rgba(127, 29, 29, 0.16))'
+                    : isSettled 
+                    ? 'linear-gradient(135deg, rgba(16, 185, 129, 0.08), rgba(6, 78, 59, 0.15))' 
+                    : 'linear-gradient(135deg, rgba(245, 158, 11, 0.08), rgba(120, 53, 15, 0.15))',
+                  border: `1px solid ${settlementDiscount > 0 ? 'rgba(239, 68, 68, 0.35)' : isSettled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+                  borderRadius: '10px',
+                  padding: '1.1rem 1.25rem',
+                  marginBottom: '1.25rem'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.7rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.88rem', fontWeight: 700, color: settlementDiscount > 0 ? '#F87171' : isSettled ? '#34D399' : '#FBBF24' }}>
+                      <i className={`fa-solid ${settlementDiscount > 0 ? 'fa-triangle-exclamation' : isSettled ? 'fa-shield-check' : 'fa-clock-rotate-left'}`}></i>
+                      <span>
+                        {settlementDiscount > 0
+                          ? `Settlement Closed with Shortfall (-₹${settlementDiscount.toLocaleString('en-IN')} Unpaid)`
+                          : isSettled 
+                          ? '100% Full Payment Settlement Complete' 
+                          : 'Partial Payment Recorded (Balance Pending)'}
+                      </span>
+                    </div>
+                    {lead.settled_at && (
+                      <span style={{ fontSize: '0.73rem', color: 'var(--text-muted)' }}>
+                        <i className="fa-regular fa-calendar" style={{ marginRight: '0.25rem' }}></i>
+                        {new Date(lead.settled_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        {lead.settled_by_name ? ` • by ${lead.settled_by_name}` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.85rem', fontSize: '0.8rem' }}>
+                    <div>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Settlement Paid</span>
+                      <strong style={{ color: '#FFF', fontSize: '1rem' }}>₹{settlementAmount.toLocaleString('en-IN')}</strong>
+                      {lead.settlement_method && (
+                        <span style={{ fontSize: '0.7rem', color: '#38BDF8', marginLeft: '0.4rem', textTransform: 'capitalize' }}>
+                          ({lead.settlement_method.replace(/_/g, ' ')})
+                        </span>
+                      )}
+                    </div>
+
+                    {lead.settlement_ref && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Reference / UTR</span>
+                        <code style={{ color: '#FBBF24', fontSize: '0.75rem', background: 'rgba(0,0,0,0.3)', padding: '0.1rem 0.35rem', borderRadius: '3px' }}>
+                          {lead.settlement_ref}
+                        </code>
+                      </div>
+                    )}
+
+                    {settlementDiscount > 0 && (
+                      <div>
+                        <span style={{ color: '#F87171', fontSize: '0.72rem', display: 'block', fontWeight: 700 }}>
+                          Unpaid by Customer / Shortfall
+                        </span>
+                        <strong style={{ color: '#F87171', fontSize: '1.05rem', fontWeight: 800 }}>- ₹{settlementDiscount.toLocaleString('en-IN')}</strong>
+                        <span style={{ fontSize: '0.68rem', color: '#CBD5E1', display: 'block', marginTop: '0.1rem' }}>
+                          Collected: ₹{(advancePaid + settlementAmount).toLocaleString('en-IN')} of ₹{totalPrice.toLocaleString('en-IN')} ({Math.round(((advancePaid + settlementAmount) / (totalPrice || 1)) * 100)}%)
+                        </span>
+                      </div>
+                    )}
+
+                    {isPartiallySettled && (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block' }}>Remaining Due</span>
+                        <strong style={{ color: '#FBBF24', fontSize: '1rem' }}>₹{balanceDue.toLocaleString('en-IN')}</strong>
+                      </div>
+                    )}
+                  </div>
+
+                  {lead.settlement_reason && (
+                    <div style={{ marginTop: '0.75rem', paddingTop: '0.6rem', borderTop: '1px dashed rgba(255,255,255,0.12)', fontSize: '0.78rem', color: '#E2E8F0', display: 'flex', alignItems: 'flex-start', gap: '0.4rem' }}>
+                      <span style={{ color: '#FBBF24', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        <i className="fa-solid fa-comment-dots" style={{ marginRight: '0.3rem' }}></i>
+                        Reason for Shortfall / Loss:
+                      </span>
+                      <span style={{ fontStyle: 'italic', color: '#CBD5E1', fontWeight: 500 }}>{lead.settlement_reason}</span>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Lead Details Grid */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1.15rem', marginBottom: '1.25rem' }}>
@@ -7808,28 +8145,93 @@ export default function AdminDashboard() {
 
                   {/* Mark Settlement Made / Settled Toggle */}
                   {(lead.status === 'converted' || lead.status === 'assigned' || lead.status === 'completed') && (
-                    <button
-                      type="button"
-                      onClick={() => handleToggleSettlement(lead.id, lead.payment_status)}
-                      disabled={actionLoading}
-                      className="btn"
-                      style={{
-                        padding: '0.4rem 0.85rem',
-                        fontSize: '0.8rem',
-                        background: isSettled ? 'rgba(16, 185, 129, 0.15)' : 'linear-gradient(135deg, #10B981, #059669)',
-                        border: isSettled ? '1px solid rgba(16, 185, 129, 0.4)' : 'none',
-                        color: isSettled ? '#34D399' : '#FFF',
-                        fontWeight: 700,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '0.35rem',
-                        borderRadius: '6px'
-                      }}
-                      title={isSettled ? "Settlement complete (Click to undo)" : "Mark full balance as settled / received"}
-                    >
-                      <i className={`fa-solid ${isSettled ? 'fa-circle-check' : 'fa-handshake-angle'}`}></i>
-                      {isSettled ? 'Settled ✅ (Undo)' : 'Mark Settlement Made'}
-                    </button>
+                    isSettled ? (
+                      <div style={{ display: 'inline-flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenSettlementModal(lead)}
+                          className="btn"
+                          style={{
+                            padding: '0.4rem 0.85rem',
+                            fontSize: '0.8rem',
+                            background: settlementDiscount > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                            border: `1px solid ${settlementDiscount > 0 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(16, 185, 129, 0.4)'}`,
+                            color: settlementDiscount > 0 ? '#F87171' : '#34D399',
+                            fontWeight: 700,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                            borderRadius: '6px'
+                          }}
+                          title={settlementDiscount > 0 ? `Settlement closed with shortfall (-₹${settlementDiscount.toLocaleString('en-IN')}) (Click to adjust)` : "Settlement complete (Click to view or adjust)"}
+                        >
+                          <i className={`fa-solid ${settlementDiscount > 0 ? 'fa-triangle-exclamation' : 'fa-circle-check'}`}></i> {settlementDiscount > 0 ? `Shortfall Closed ⚠️ (-₹${settlementDiscount.toLocaleString('en-IN')})` : '100% Settled ✅'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRevertSettlement(lead.id)}
+                          disabled={actionLoading}
+                          className="btn btn-outline"
+                          style={{
+                            padding: '0.4rem 0.65rem',
+                            fontSize: '0.75rem',
+                            color: '#F87171',
+                            borderColor: 'rgba(239, 68, 68, 0.3)',
+                            background: 'rgba(239, 68, 68, 0.05)',
+                            borderRadius: '6px'
+                          }}
+                          title="Undo settlement and restore balance due"
+                        >
+                          <i className="fa-solid fa-rotate-left"></i> Undo
+                        </button>
+                      </div>
+                    ) : isPartiallySettled ? (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSettlementModal(lead)}
+                        disabled={actionLoading}
+                        className="btn"
+                        style={{
+                          padding: '0.4rem 0.85rem',
+                          fontSize: '0.8rem',
+                          background: 'linear-gradient(135deg, #F59E0B, #D97706)',
+                          border: 'none',
+                          color: '#FFF',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          borderRadius: '6px',
+                          boxShadow: '0 2px 8px rgba(245, 158, 11, 0.3)'
+                        }}
+                        title="Collect remaining balance"
+                      >
+                        <i className="fa-solid fa-clock-rotate-left"></i> Collect Balance (₹{balanceDue.toLocaleString('en-IN')})
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSettlementModal(lead)}
+                        disabled={actionLoading}
+                        className="btn"
+                        style={{
+                          padding: '0.4rem 0.85rem',
+                          fontSize: '0.8rem',
+                          background: 'linear-gradient(135deg, #10B981, #059669)',
+                          border: 'none',
+                          color: '#FFF',
+                          fontWeight: 700,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          borderRadius: '6px',
+                          boxShadow: '0 2px 8px rgba(16, 185, 129, 0.3)'
+                        }}
+                        title="Mark full balance settlement as received/completed"
+                      >
+                        <i className="fa-solid fa-handshake-angle"></i> Mark Settlement Made
+                      </button>
+                    )
                   )}
 
                   {cleanPhone && (
@@ -7899,6 +8301,435 @@ export default function AdminDashboard() {
                   Close
                 </button>
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Payment Settlement Modal (Full & Partial with Reason) */}
+      {settlementModalLead && (() => {
+        const lead = settlementModalLead;
+        const totalPrice = parseFloat(lead.itinerary_price) || 0;
+        const advancePaid = parseFloat(lead.advance_paid) || 0;
+        const prevSettlementPaid = parseFloat(lead.settlement_amount) || 0;
+        const prevDiscount = parseFloat(lead.settlement_discount) || 0;
+        const totalAlreadyPaid = advancePaid + prevSettlementPaid;
+        const balancePending = Math.max(0, totalPrice - totalAlreadyPaid - prevDiscount);
+
+        const currentAmount = parseFloat(settlementForm.amount) || 0;
+        const currentDiscount = settlementForm.settlementType === 'partial_settled'
+          ? Math.max(0, balancePending - currentAmount)
+          : (parseFloat(settlementForm.discount) || 0);
+
+        const projectedBalance = settlementForm.settlementType === 'partial_pending'
+          ? Math.max(0, balancePending - currentAmount)
+          : 0;
+
+        const quickReasonChips = [
+          '❄️ Weather / Nathula Pass road closed',
+          '🚗 Cab / Service delay compensation',
+          '🏨 Hotel room amenity / check-in issue',
+          '🏷️ Management goodwill discount approved',
+          '⏱️ Tour itinerary shortened by guest',
+          '🤝 Mutual discount agreed upon arrival'
+        ];
+
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.82)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '1rem'
+          }}>
+            <div className="animate-fade-in glass-card" style={{
+              maxWidth: '680px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '1.75rem',
+              borderRadius: '16px',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+              position: 'relative'
+            }}>
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.9rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#34D399', fontSize: '1.1rem' }}>
+                      <i className="fa-solid fa-file-invoice-dollar"></i>
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.25rem', fontWeight: 700 }}>
+                        Record Payment Settlement
+                      </h3>
+                      <p style={{ margin: '0.15rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                        Guest: <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> ({lead.client_phone})
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseSettlementModal}
+                  style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: 'var(--text-muted)', fontSize: '1.3rem', width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Financial Snapshot Overview */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: '0.75rem',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '10px',
+                padding: '0.9rem',
+                marginBottom: '1.25rem',
+                textAlign: 'center'
+              }}>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Package</span>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#FFF', marginTop: '0.2rem' }}>₹{totalPrice.toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Paid So Far</span>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#34D399', marginTop: '0.2rem' }}>₹{totalAlreadyPaid.toLocaleString('en-IN')}</div>
+                </div>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: '#F87171', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Balance Pending</span>
+                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#F87171', marginTop: '0.2rem' }}>₹{balancePending.toLocaleString('en-IN')}</div>
+                </div>
+              </div>
+
+              {/* Settlement Type Tabs */}
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.5rem', fontWeight: 600 }}>
+                  Settlement Type / Resolution Mode:
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.6rem' }}>
+                  {/* Full Settlement */}
+                  <button
+                    type="button"
+                    onClick={() => setSettlementForm(prev => ({
+                      ...prev,
+                      settlementType: 'full',
+                      amount: String(balancePending),
+                      discount: '0'
+                    }))}
+                    style={{
+                      background: settlementForm.settlementType === 'full' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1.5px solid ${settlementForm.settlementType === 'full' ? '#10B981' : 'rgba(255, 255, 255, 0.08)'}`,
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: settlementForm.settlementType === 'full' ? '#34D399' : '#FFF', fontWeight: 700, fontSize: '0.83rem' }}>
+                      <i className="fa-solid fa-circle-check"></i>
+                      <span>Full Settlement</span>
+                    </div>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      Collect entire ₹{balancePending.toLocaleString('en-IN')} balance. Balance becomes ₹0.
+                    </p>
+                  </button>
+
+                  {/* Partial Settlement with Waiver */}
+                  <button
+                    type="button"
+                    onClick={() => setSettlementForm(prev => ({
+                      ...prev,
+                      settlementType: 'partial_settled',
+                      amount: prev.amount && parseFloat(prev.amount) < balancePending ? prev.amount : String(Math.max(0, balancePending - 2000)),
+                      discount: '0'
+                    }))}
+                    style={{
+                      background: settlementForm.settlementType === 'partial_settled' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1.5px solid ${settlementForm.settlementType === 'partial_settled' ? '#38BDF8' : 'rgba(255, 255, 255, 0.08)'}`,
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: settlementForm.settlementType === 'partial_settled' ? '#38BDF8' : '#FFF', fontWeight: 700, fontSize: '0.83rem' }}>
+                      <i className="fa-solid fa-handshake"></i>
+                      <span>Partial with Waiver</span>
+                    </div>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      Guest pays less; remainder waived with reason. Account fully closed.
+                    </p>
+                  </button>
+
+                  {/* Partial Payment (Balance Pending) */}
+                  <button
+                    type="button"
+                    onClick={() => setSettlementForm(prev => ({
+                      ...prev,
+                      settlementType: 'partial_pending',
+                      amount: prev.amount && parseFloat(prev.amount) < balancePending ? prev.amount : String(Math.round(balancePending / 2)),
+                      discount: '0'
+                    }))}
+                    style={{
+                      background: settlementForm.settlementType === 'partial_pending' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                      border: `1.5px solid ${settlementForm.settlementType === 'partial_pending' ? '#F59E0B' : 'rgba(255, 255, 255, 0.08)'}`,
+                      borderRadius: '8px',
+                      padding: '0.75rem',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', color: settlementForm.settlementType === 'partial_pending' ? '#FBBF24' : '#FFF', fontWeight: 700, fontSize: '0.83rem' }}>
+                      <i className="fa-solid fa-clock-rotate-left"></i>
+                      <span>Partial Installment</span>
+                    </div>
+                    <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.7rem', color: 'var(--text-muted)', lineHeight: '1.3' }}>
+                      Collect installment now. Balance remains open to be paid later.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Inputs */}
+              <form onSubmit={handleSubmitSettlement}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.9rem', marginBottom: '1rem' }}>
+                  {/* Amount Received Input */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: '#FFF', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Settlement Amount Received (₹): <span style={{ color: '#F87171' }}>*</span>
+                    </label>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94A3B8', fontWeight: 700 }}>₹</span>
+                      <input
+                        type="number"
+                        step="1"
+                        min="0"
+                        max={totalPrice}
+                        className="form-control"
+                        value={settlementForm.amount}
+                        onChange={(e) => setSettlementForm(prev => ({ ...prev, amount: e.target.value }))}
+                        placeholder={String(balancePending)}
+                        required
+                        style={{ paddingLeft: '2rem', fontSize: '1rem', fontWeight: 700, color: '#FFF', background: 'var(--bg-surface-elevated)' }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payment Method */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: '#FFF', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Payment Mode: <span style={{ color: '#F87171' }}>*</span>
+                    </label>
+                    <select
+                      className="form-control"
+                      value={settlementForm.paymentMethod}
+                      onChange={(e) => setSettlementForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                      style={{ fontSize: '0.85rem', color: '#FFF', background: 'var(--bg-surface-elevated)' }}
+                    >
+                      <option value="upi_qr">UPI / QR (GPay / PhonePe / Paytm)</option>
+                      <option value="cash">Cash in Hand</option>
+                      <option value="bank_transfer">Bank Transfer (NEFT / IMPS / RTGS)</option>
+                      <option value="card">Credit / Debit Card</option>
+                    </select>
+                  </div>
+
+                  {/* Transaction Ref / UTR */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Transaction UTR / Reference ID:
+                    </label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={settlementForm.transactionRef}
+                      onChange={(e) => setSettlementForm(prev => ({ ...prev, transactionRef: e.target.value }))}
+                      placeholder={settlementForm.paymentMethod === 'cash' ? 'e.g. CASH_SETTLEMENT' : 'e.g. 12-digit UTR or Txn Ref'}
+                      style={{ fontSize: '0.85rem', color: '#FFF', background: 'var(--bg-surface-elevated)' }}
+                    />
+                  </div>
+
+                  {/* Settlement Date */}
+                  <div>
+                    <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                      Settlement Date:
+                    </label>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={settlementForm.settlementDate}
+                      onChange={(e) => setSettlementForm(prev => ({ ...prev, settlementDate: e.target.value }))}
+                      style={{ fontSize: '0.85rem', color: '#FFF', background: 'var(--bg-surface-elevated)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Conditional Reason Field (Mandatory for Partial Settlement with Waiver) */}
+                {settlementForm.settlementType === 'partial_settled' && (
+                  <div style={{
+                    background: 'rgba(56, 189, 248, 0.06)',
+                    border: '1px solid rgba(56, 189, 248, 0.25)',
+                    borderRadius: '8px',
+                    padding: '0.9rem',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <label style={{ fontSize: '0.8rem', color: '#38BDF8', fontWeight: 700, margin: 0 }}>
+                        <i className="fa-solid fa-asterisk" style={{ fontSize: '0.65rem', marginRight: '0.3rem' }}></i>
+                        Reason for Partial Settlement & Waiver: (Required)
+                      </label>
+                      <span style={{ fontSize: '0.73rem', color: '#F87171', fontWeight: 700 }}>
+                        Waiver Amount: ₹{currentDiscount.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+
+                    <textarea
+                      rows="2"
+                      className="form-control"
+                      value={settlementForm.reason}
+                      onChange={(e) => setSettlementForm(prev => ({ ...prev, reason: e.target.value }))}
+                      placeholder="Specify the reason why full balance was not collected (e.g., Nathula Pass closed due to heavy snow, hotel room complaint, or owner approved discount)..."
+                      required
+                      style={{ fontSize: '0.82rem', color: '#FFF', background: 'var(--bg-surface-elevated)', marginBottom: '0.5rem' }}
+                    />
+
+                    {/* Quick Reason Chips */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      {quickReasonChips.map((chip, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSettlementForm(prev => ({ ...prev, reason: chip.replace(/^.+?\s/, '') }))}
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.05)',
+                            border: '1px solid rgba(255, 255, 255, 0.1)',
+                            borderRadius: '12px',
+                            padding: '0.2rem 0.55rem',
+                            fontSize: '0.7rem',
+                            color: '#CBD5E1',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional Note for partial payment installment */}
+                {settlementForm.settlementType === 'partial_pending' && (
+                  <div style={{
+                    background: 'rgba(245, 158, 11, 0.06)',
+                    border: '1px solid rgba(245, 158, 11, 0.25)',
+                    borderRadius: '8px',
+                    padding: '0.85rem',
+                    marginBottom: '1rem'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                      <label style={{ fontSize: '0.8rem', color: '#FBBF24', fontWeight: 700, margin: 0 }}>
+                        Installment Note / Follow-up Details:
+                      </label>
+                      <span style={{ fontSize: '0.73rem', color: '#FBBF24', fontWeight: 700 }}>
+                        Remaining Due: ₹{projectedBalance.toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      className="form-control"
+                      value={settlementForm.reason}
+                      onChange={(e) => setSettlementForm(prev => ({ ...prev, reason: e.target.value }))}
+                      placeholder="e.g., Guest paid ₹15,000 on arrival; remaining ₹9,300 payable at Gangtok checkout"
+                      style={{ fontSize: '0.82rem', color: '#FFF', background: 'var(--bg-surface-elevated)' }}
+                    />
+                  </div>
+                )}
+
+                {/* Real-time Settlement Preview Breakdown */}
+                <div style={{
+                  background: 'rgba(0, 0, 0, 0.4)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  borderRadius: '10px',
+                  padding: '0.85rem 1rem',
+                  marginBottom: '1.25rem',
+                  fontSize: '0.8rem'
+                }}>
+                  <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.4rem', fontWeight: 700 }}>
+                    Settlement Calculation Summary:
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', color: '#CBD5E1' }}>
+                    <span>Pending Balance:</span>
+                    <strong>₹{balancePending.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', color: '#34D399' }}>
+                    <span>Collecting Now:</span>
+                    <strong>- ₹{currentAmount.toLocaleString('en-IN')}</strong>
+                  </div>
+                  {currentDiscount > 0 && settlementForm.settlementType === 'partial_settled' && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', color: '#F87171' }}>
+                      <span>Waiver / Discount:</span>
+                      <strong>- ₹{currentDiscount.toLocaleString('en-IN')}</strong>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px dashed rgba(255, 255, 255, 0.15)', paddingTop: '0.4rem', marginTop: '0.3rem', color: '#FFF', fontWeight: 700 }}>
+                    <span>Final Outstanding Balance:</span>
+                    <span style={{ color: projectedBalance === 0 ? '#34D399' : '#FBBF24', fontSize: '0.95rem' }}>
+                      {projectedBalance === 0 ? '₹0 (Fully Settled ✅)' : `₹${projectedBalance.toLocaleString('en-IN')} (Pending)`}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.6rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleCloseSettlementModal}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={actionLoading}
+                    className="btn"
+                    style={{
+                      padding: '0.45rem 1.25rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #10B981, #059669)',
+                      border: 'none',
+                      color: '#FFF',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
+                    }}
+                  >
+                    {actionLoading ? (
+                      <i className="fa-solid fa-spinner fa-spin"></i>
+                    ) : (
+                      <i className="fa-solid fa-check-double"></i>
+                    )}
+                    Confirm & Save Settlement
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         );

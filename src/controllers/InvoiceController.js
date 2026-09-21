@@ -71,8 +71,10 @@ export class InvoiceController {
       const totalAmount = Math.round((basePrice + gstAmount) * 100) / 100;
 
       const advancePaid = lead.advance_paid ? parseFloat(lead.advance_paid) : (lead.status === 'converted' || lead.status === 'assigned' || lead.payment_status === 'advance_paid' || lead.payment_status === 'settled' ? Math.round(totalAmount * 0.10) : 0);
+      const settlementAmount = parseFloat(lead.settlement_amount) || 0;
+      const settlementDiscount = parseFloat(lead.settlement_discount) || 0;
       const isSettled = lead.status === 'completed' || lead.payment_status === 'settled';
-      const balanceDue = isSettled ? 0 : Math.max(0, Math.round((totalAmount - advancePaid) * 100) / 100);
+      const balanceDue = isSettled ? 0 : Math.max(0, Math.round((totalAmount - advancePaid - settlementAmount - settlementDiscount) * 100) / 100);
 
       return NextResponse.json({
         success: true,
@@ -118,11 +120,17 @@ export class InvoiceController {
             basePrice,
             gstRate: 5,
             gstAmount,
-            discount: 0,
+            discount: settlementDiscount,
             totalAmount,
             advancePaid,
+            settlementAmount,
+            settlementDiscount,
+            settlementReason: lead.settlement_reason,
+            settlementMethod: lead.settlement_method,
+            settlementRef: lead.settlement_ref,
+            settledAt: lead.settled_at,
             balanceDue,
-            paymentStatus: isSettled ? 'PAID & FULLY SETTLED' : (advancePaid > 0 || lead.status === 'converted' || lead.status === 'assigned') ? '10% ADVANCE RECEIVED' : 'ADVANCE DUE',
+            paymentStatus: isSettled ? (settlementDiscount > 0 ? 'SETTLED (WITH WAIVER / ADJUSTMENT)' : 'PAID & FULLY SETTLED') : lead.payment_status === 'partially_settled' ? 'PARTIALLY SETTLED - BALANCE DUE' : (advancePaid > 0 || lead.status === 'converted' || lead.status === 'assigned') ? '10% ADVANCE RECEIVED' : 'ADVANCE DUE',
             rawPaymentStatus: lead.payment_status,
             transactionRef: lead.transaction_ref,
             paymentMethod: lead.payment_method || 'UPI'

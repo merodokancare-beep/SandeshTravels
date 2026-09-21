@@ -77,7 +77,7 @@ export class LeadModel {
     const values = [];
     let idx = 1;
 
-    const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, status, startDate, source, packageName, vehicleType, vehicleCategory, vehicleCount, vehiclePreferenceDetails, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, status, startDate, source, packageName, vehicleType, vehicleCategory, vehicleCount, vehiclePreferenceDetails, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy, settlementAmount, settlementDiscount, settlementReason, settlementMethod, settlementRef, settledAt, settledBy, settledByName } = fields;
 
     if (clientName !== undefined) {
       updates.push(`client_name = $${idx++}`);
@@ -190,6 +190,38 @@ export class LeadModel {
     if (advanceVerifiedBy !== undefined) {
       updates.push(`advance_verified_by = $${idx++}`);
       values.push(advanceVerifiedBy);
+    }
+    if (settlementAmount !== undefined) {
+      updates.push(`settlement_amount = $${idx++}`);
+      values.push(settlementAmount);
+    }
+    if (settlementDiscount !== undefined) {
+      updates.push(`settlement_discount = $${idx++}`);
+      values.push(settlementDiscount);
+    }
+    if (settlementReason !== undefined) {
+      updates.push(`settlement_reason = $${idx++}`);
+      values.push(settlementReason);
+    }
+    if (settlementMethod !== undefined) {
+      updates.push(`settlement_method = $${idx++}`);
+      values.push(settlementMethod);
+    }
+    if (settlementRef !== undefined) {
+      updates.push(`settlement_ref = $${idx++}`);
+      values.push(settlementRef);
+    }
+    if (settledAt !== undefined) {
+      updates.push(`settled_at = $${idx++}`);
+      values.push(settledAt);
+    }
+    if (settledBy !== undefined) {
+      updates.push(`settled_by = $${idx++}`);
+      values.push(settledBy);
+    }
+    if (settledByName !== undefined) {
+      updates.push(`settled_by_name = $${idx++}`);
+      values.push(settledByName);
     }
 
     if (updates.length === 0) {

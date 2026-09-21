@@ -651,7 +651,19 @@ export class LeadController {
         );
       }
 
-      const { leadId, isSettled = true, notes } = await request.json();
+      const {
+        leadId,
+        action = 'settle', // 'settle' or 'revert'
+        isSettled,
+        settlementType = 'full', // 'full', 'partial_settled', 'partial_pending'
+        amount,
+        discount,
+        reason,
+        paymentMethod = 'cash',
+        transactionRef = '',
+        settlementDate,
+        notes
+      } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -668,16 +680,114 @@ export class LeadController {
         );
       }
 
-      const newPaymentStatus = isSettled ? 'settled' : (parseFloat(existingLead.advance_paid) > 0 ? 'advance_paid' : 'unpaid');
+      // Check if this is a revert / undo action
+      const isRevert = action === 'revert' || isSettled === false;
+      if (isRevert) {
+        const revertedStatus = parseFloat(existingLead.advance_paid) > 0 ? 'advance_paid' : 'unpaid';
+        const revertAudit = `[Settlement Reverted]: Settlement undone by ${session.name || 'Admin'} on ${new Date().toLocaleDateString('en-IN')}`;
+        const updatedLead = await LeadModel.update(leadId, {
+          paymentStatus: revertedStatus,
+          settlementAmount: 0.00,
+          settlementDiscount: 0.00,
+          settlementReason: null,
+          settlementMethod: null,
+          settlementRef: null,
+          settledAt: null,
+          settledBy: null,
+          settledByName: null,
+          notes: existingLead.notes ? `${existingLead.notes}\n${revertAudit}` : revertAudit
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: 'Settlement status reverted back to pending balance.',
+          lead: updatedLead
+        });
+      }
+
+      // Calculate financials
+      const itinerary = await ItineraryModel.getByLeadId(leadId);
+      const totalPrice = itinerary ? (parseFloat(itinerary.price) || 0) : (parseFloat(existingLead.itinerary_price) || 0);
+      const advancePaid = parseFloat(existingLead.advance_paid) || 0;
+      const prevSettlementPaid = parseFloat(existingLead.settlement_amount) || 0;
+      const prevDiscount = parseFloat(existingLead.settlement_discount) || 0;
+      const balanceBefore = Math.max(0, totalPrice - advancePaid - prevSettlementPaid - prevDiscount);
+
+      let finalSettlementAmount = 0;
+      let finalDiscount = 0;
+      let newPaymentStatus = 'settled';
+      let auditDetail = '';
+
+      if (settlementType === 'partial_settled') {
+        // Customer pays partial amount, remainder is waived / discounted due to reason. Account is settled!
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount < 0) {
+          return NextResponse.json(
+            { error: 'Please enter a valid settlement amount received.' },
+            { status: 400 }
+          );
+        }
+        if (!reason || !reason.trim()) {
+          return NextResponse.json(
+            { error: 'A specific reason or justification is required for partial settlement / discount waiver.' },
+            { status: 400 }
+          );
+        }
+
+        const calculatedDiscount = (discount !== undefined && !isNaN(parseFloat(discount)) && parseFloat(discount) > 0)
+          ? parseFloat(discount)
+          : Math.max(0, balanceBefore - parsedAmount);
+
+        finalSettlementAmount = parsedAmount;
+        finalDiscount = calculatedDiscount;
+        newPaymentStatus = 'settled';
+        auditDetail = `Partial Settlement Closed: ₹${parsedAmount.toLocaleString('en-IN')} received, ₹${calculatedDiscount.toLocaleString('en-IN')} uncollected/waived. Reason: ${reason.trim()}`;
+
+      } else if (settlementType === 'partial_pending') {
+        // Customer pays an installment now, remainder is still pending due on departure/checkout
+        const parsedAmount = parseFloat(amount);
+        if (isNaN(parsedAmount) || parsedAmount <= 0) {
+          return NextResponse.json(
+            { error: 'Please enter a valid partial payment amount.' },
+            { status: 400 }
+          );
+        }
+
+        finalSettlementAmount = prevSettlementPaid + parsedAmount;
+        finalDiscount = discount !== undefined && !isNaN(parseFloat(discount)) ? parseFloat(discount) : prevDiscount;
+        const remainingBalance = Math.max(0, totalPrice - advancePaid - finalSettlementAmount - finalDiscount);
+        newPaymentStatus = remainingBalance === 0 ? 'settled' : 'partially_settled';
+        auditDetail = `Partial Payment Received: ₹${parsedAmount.toLocaleString('en-IN')} (Remaining Balance: ₹${remainingBalance.toLocaleString('en-IN')}). Note: ${reason ? reason.trim() : 'Installment collected'}`;
+
+      } else {
+        // Full Settlement of entire pending balance
+        finalSettlementAmount = amount !== undefined && !isNaN(parseFloat(amount)) ? parseFloat(amount) : balanceBefore;
+        finalDiscount = 0;
+        newPaymentStatus = 'settled';
+        auditDetail = `Full Settlement Received: ₹${finalSettlementAmount.toLocaleString('en-IN')}${reason ? `. Note: ${reason.trim()}` : ''}`;
+      }
+
+      const settlementTimestamp = settlementDate ? new Date(settlementDate) : new Date();
+      const settlementAudit = `[Settlement]: ${auditDetail} | Mode: ${paymentMethod || 'cash'}${transactionRef ? ` (Ref: ${transactionRef})` : ''} | Handled by: ${session.name || 'Admin'} on ${settlementTimestamp.toLocaleDateString('en-IN')}`;
 
       const updatedLead = await LeadModel.update(leadId, {
         paymentStatus: newPaymentStatus,
-        ...(notes ? { notes: existingLead.notes ? `${existingLead.notes}\n[Settlement]: ${notes}` : `[Settlement]: ${notes}` } : {})
+        settlementAmount: finalSettlementAmount,
+        settlementDiscount: finalDiscount,
+        settlementReason: reason ? reason.trim() : (existingLead.settlement_reason || null),
+        settlementMethod: paymentMethod || 'cash',
+        settlementRef: transactionRef ? transactionRef.trim() : null,
+        settledAt: settlementTimestamp,
+        settledBy: session.userId || session.adminId,
+        settledByName: session.name || 'Admin',
+        notes: existingLead.notes ? `${existingLead.notes}\n${settlementAudit}` : settlementAudit
       });
 
       return NextResponse.json({
         success: true,
-        message: isSettled ? 'Full balance marked as settled!' : 'Settlement status reverted to advance paid.',
+        message: newPaymentStatus === 'settled'
+          ? (finalDiscount > 0 ? `Settlement completed! ₹${finalSettlementAmount.toLocaleString('en-IN')} collected with ₹${finalDiscount.toLocaleString('en-IN')} waiver logged.` : 'Full settlement successfully marked as complete!')
+          : `Partial payment of ₹${parseFloat(amount).toLocaleString('en-IN')} recorded. Balance remaining is pending.`,
         lead: updatedLead
       });
     } catch (error) {
