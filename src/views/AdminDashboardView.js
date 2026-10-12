@@ -112,8 +112,69 @@ function getLeadSourceInfo(lead) {
   };
 }
 
+function parseDateRobust(dateInput) {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) return dateInput;
+  const str = String(dateInput).trim();
+  const ymdMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymdMatch) {
+    return new Date(parseInt(ymdMatch[1], 10), parseInt(ymdMatch[2], 10) - 1, parseInt(ymdMatch[3], 10));
+  }
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getLeadTravelerDetails(lead) {
+  if (!lead) return { total: 1, adults: 1, children: 0, elderly: 0, summaryStr: '1 Guest', tagsStr: '(1A)', childAges: [] };
+  const elderly = parseInt(lead.num_elderly || lead.elderly || 0, 10);
+  const children = parseInt(lead.children || lead.num_children || 0, 10);
+  const adults = parseInt(lead.adults || lead.num_adults || Math.max(1, (lead.num_travelers || 1) - children - elderly), 10);
+  const total = lead.num_travelers || (adults + children + elderly);
+  let childAges = [];
+  try {
+    const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
+    if (Array.isArray(parsed)) childAges = parsed;
+    else if (lead.children_ages) childAges = [lead.children_ages];
+  } catch (e) {}
+  
+  const parts = [`${adults} Adult(s)`];
+  if (children > 0) parts.push(`${children} Child(ren)${childAges.length > 0 ? ` (Ages: ${childAges.join(', ')})` : ''}`);
+  if (elderly > 0) parts.push(`${elderly} Senior / Elderly (60+ yrs)`);
+  
+  const tags = [`${adults}A`];
+  if (children > 0) tags.push(`${children}C`);
+  if (elderly > 0) tags.push(`${elderly}S`);
+  
+  return { total, adults, children, elderly, summaryStr: parts.join(', '), tagsStr: `(${tags.join(', ')})`, childAges };
+}
+
 function getCleanTravelDates(lead) {
   if (!lead) return 'Dates not set';
+  
+  // 1. Both start_date and end_date explicitly available
+  if (lead.start_date && lead.end_date) {
+    try {
+      const startParts = String(lead.start_date).substring(0, 10).split('-');
+      const endParts = String(lead.end_date).substring(0, 10).split('-');
+      if (startParts.length === 3 && endParts.length === 3) {
+        const start = new Date(parseInt(startParts[0], 10), parseInt(startParts[1], 10) - 1, parseInt(startParts[2], 10));
+        const end = new Date(parseInt(endParts[0], 10), parseInt(endParts[1], 10) - 1, parseInt(endParts[2], 10));
+        const diffMs = end.getTime() - start.getTime();
+        const diffDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+        const nights = Math.max(0, diffDays - 1);
+        const durStr = ` (${diffDays}D/${nights}N)`;
+        const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        if (start.getFullYear() !== end.getFullYear()) {
+          const startStrFull = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          return `${startStrFull} – ${endStr}${durStr}`;
+        }
+        return `${startStr} – ${endStr}${durStr}`;
+      }
+    } catch (e) {}
+  }
+
+  // 2. start_date available with total_days from itinerary
   if (lead.start_date) {
     try {
       const parts = String(lead.start_date).substring(0, 10).split('-');
@@ -127,9 +188,9 @@ function getCleanTravelDates(lead) {
           const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           if (start.getFullYear() !== end.getFullYear()) {
             const startStrFull = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-            return `${startStrFull} – ${endStr}`;
+            return `${startStrFull} – ${endStr} (${totalDays}D/${totalDays - 1}N)`;
           }
-          return `${startStr} – ${endStr}`;
+          return `${startStr} – ${endStr} (${totalDays}D/${totalDays - 1}N)`;
         }
         if (totalDays === 1) {
           return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (1 Day)`;
@@ -139,35 +200,31 @@ function getCleanTravelDates(lead) {
     } catch (e) {}
     return `Starts: ${new Date(lead.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   }
+  
   if (!lead.travel_dates) return 'Dates not set';
+
+  // 3. Extract from "[Travel Dates: YYYY-MM-DD to YYYY-MM-DD]"
+  const rangeMatch = String(lead.travel_dates).match(/Travel Dates:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*to\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+  if (rangeMatch) {
+    try {
+      const s = new Date(rangeMatch[1]);
+      const e = new Date(rangeMatch[2]);
+      const sStr = s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const eStr = e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const diffMs = e.getTime() - s.getTime();
+      const diffDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      const nights = Math.max(0, diffDays - 1);
+      return `${sStr} – ${eStr} (${diffDays}D/${nights}N)`;
+    } catch (err) {}
+  }
 
   let rawDate = lead.travel_dates;
   if (rawDate.includes('|')) {
     const parts = rawDate.split('|').map(p => p.trim());
-    const datePart = parts.find(p => !p.includes('Website') && !p.includes('[') && !p.includes('Notes:'));
-    if (datePart) rawDate = datePart;
+    const datePart = parts.find(p => !p.includes('Website') && !p.includes('Travelers') && !p.includes('Vehicle') && !p.includes('Notes:'));
+    if (datePart) rawDate = datePart.replace(/^\[/, '').replace(/\]$/, '');
   }
   const cleaned = rawDate.replace(/🌐\s*\[Website Online Lead\]\s*\|?/g, '').trim();
-
-  // Try extracting YYYY-MM-DD if total_days is present
-  if (lead.total_days && parseInt(lead.total_days, 10) > 1) {
-    const match = cleaned.match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-      try {
-        const start = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
-        const totalDays = parseInt(lead.total_days, 10);
-        const end = new Date(start);
-        end.setDate(start.getDate() + totalDays - 1);
-        const startStr = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-        const endStr = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        if (start.getFullYear() !== end.getFullYear()) {
-          const startStrFull = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          return `${startStrFull} – ${endStr}`;
-        }
-        return `${startStr} – ${endStr}`;
-      } catch (e) {}
-    }
-  }
 
   return cleaned || 'Dates not set';
 }
@@ -232,6 +289,15 @@ export default function AdminDashboard() {
   const [selectedEmployeeDetails, setSelectedEmployeeDetails] = useState(null);
   const [selectedLeadForDetails, setSelectedLeadForDetails] = useState(null);
   const [settlementModalLead, setSettlementModalLead] = useState(null);
+
+  // Record Advance Modal states
+  const [advanceModalLead, setAdvanceModalLead] = useState(null);
+  const [advanceForm, setAdvanceForm] = useState({
+    amount: '',
+    paymentMethod: 'cash',
+    transactionRef: 'CASH_COLLECTED',
+    sendWhatsApp: true
+  });
   const [settlementForm, setSettlementForm] = useState({
     settlementType: 'full',
     amount: '',
@@ -512,17 +578,19 @@ export default function AdminDashboard() {
   const [newLeadTravelers, setNewLeadTravelers] = useState(1);
   const [newLeadVehicleCategory, setNewLeadVehicleCategory] = useState(''); // default empty: prompt user to select
   const [newLeadStartDate, setNewLeadStartDate] = useState('');
+  const [newLeadEndDate, setNewLeadEndDate] = useState('');
+  const [newLeadElderly, setNewLeadElderly] = useState(0);
 
   const handleAdultsChange = (val) => {
     const num = Math.max(1, parseInt(val, 10) || 1);
     setNewLeadAdults(num);
-    setNewLeadTravelers(num + (parseInt(newLeadChildren, 10) || 0));
+    setNewLeadTravelers(num + (parseInt(newLeadChildren, 10) || 0) + (parseInt(newLeadElderly, 10) || 0));
   };
 
   const handleChildrenChange = (val) => {
     const count = Math.max(0, parseInt(val, 10) || 0);
     setNewLeadChildren(count);
-    setNewLeadTravelers((parseInt(newLeadAdults, 10) || 1) + count);
+    setNewLeadTravelers((parseInt(newLeadAdults, 10) || 1) + count + (parseInt(newLeadElderly, 10) || 0));
     setNewLeadChildAges((prev) => {
       const next = [...prev];
       if (count > next.length) {
@@ -534,6 +602,12 @@ export default function AdminDashboard() {
       }
       return next;
     });
+  };
+
+  const handleElderlyChange = (val) => {
+    const count = Math.max(0, parseInt(val, 10) || 0);
+    setNewLeadElderly(count);
+    setNewLeadTravelers((parseInt(newLeadAdults, 10) || 1) + (parseInt(newLeadChildren, 10) || 0) + count);
   };
 
   const handleChildAgeChange = (index, val) => {
@@ -1294,16 +1368,10 @@ export default function AdminDashboard() {
     
     const formattedStartDate = getCleanTravelDates(lead);
 
-    const formattedGuests = lead.children > 0
-      ? (() => {
-          let ages = '';
-          try {
-            const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
-            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
-          } catch (e) {}
-          return `${lead.num_travelers || 1} Traveler(s) [${lead.adults || 1} Adult(s), ${lead.children} Child(ren)${ages}]`;
-        })()
-      : `${lead.num_travelers || 1} Traveler(s)`;
+    const formattedGuests = (() => {
+      const t = getLeadTravelerDetails(lead);
+      return `${t.total} Traveler(s) [${t.summaryStr}]`;
+    })();
 
     let msg = `*BOOKING CONFIRMED – Sandesh Travels* 🏔️✨\n\n`;
     msg += `Dear *${lead.client_name}*,\n\n`;
@@ -1347,16 +1415,10 @@ export default function AdminDashboard() {
     const vCount = lead.vehicle_count || (lead.num_travelers ? Math.ceil(lead.num_travelers / (vCat === 'J' ? 8 : vCat === 'Z' ? 6 : 4)) : 1);
     const vLabel = vCat === 'J' ? 'J-Series (Maxi Cab 8-Seater)' : vCat === 'Z' ? 'Z-Series (MUV/SUV 6-Seater)' : 'T-Series (Hatchback/Sedan 4-Seater)';
 
-    const formattedGuests = lead.children > 0
-      ? (() => {
-          let ages = '';
-          try {
-            const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
-            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
-          } catch (e) {}
-          return `${lead.num_travelers || 1} Traveler(s) [${lead.adults || 1} Adult(s), ${lead.children} Child(ren)${ages}]`;
-        })()
-      : `${lead.num_travelers || 1} Traveler(s)`;
+    const formattedGuests = (() => {
+      const t = getLeadTravelerDetails(lead);
+      return `${t.total} Traveler(s) [${t.summaryStr}]`;
+    })();
 
     let msg = `*TOUR QUOTATION & ITINERARY – Sandesh Travels* 🏔️✈️\n\n`;
     msg += `Dear *${lead.client_name}*,\n\n`;
@@ -1705,11 +1767,41 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleRecordManualAdvance = async (leadId) => {
-    const amountStr = prompt('Enter advance amount received (₹):');
-    if (!amountStr || isNaN(parseFloat(amountStr))) return;
-    const paymentMethod = prompt('Payment mode (cash, bank_transfer, upi_qr):', 'cash') || 'cash';
-    const transactionRef = prompt('Reference / Notes:', 'MANUAL_CASH') || 'MANUAL_CASH';
+  const handleOpenAdvanceModal = (targetLeadOrId) => {
+    let targetLead = typeof targetLeadOrId === 'object' && targetLeadOrId !== null
+      ? targetLeadOrId
+      : leads.find(l => String(l.id) === String(targetLeadOrId));
+    if (!targetLead) return;
+    const freshLead = leads.find(l => String(l.id) === String(targetLead.id)) || targetLead;
+    const totalPrice = parseFloat(freshLead.itinerary_price) || 0;
+    const requiredAdvance = parseFloat(freshLead.advance_amount) || Math.round(totalPrice * 0.1) || 0;
+    const existingAdvance = parseFloat(freshLead.advance_paid) || 0;
+    const initialAmount = existingAdvance > 0 
+      ? existingAdvance 
+      : (requiredAdvance > 0 ? requiredAdvance : (totalPrice > 0 ? Math.round(totalPrice * 0.1) : ''));
+
+    setAdvanceModalLead(freshLead);
+    setAdvanceForm({
+      amount: initialAmount ? String(initialAmount) : '',
+      paymentMethod: freshLead.payment_method || 'cash',
+      transactionRef: freshLead.transaction_ref || (freshLead.payment_method === 'cash' ? 'CASH_COLLECTED' : 'ADV_PAYMENT'),
+      sendWhatsApp: true
+    });
+  };
+
+  const handleCloseAdvanceModal = () => {
+    setAdvanceModalLead(null);
+  };
+
+  const handleSubmitAdvanceModal = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!advanceModalLead) return;
+
+    const parsedAmount = parseFloat(advanceForm.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setError('Please enter a valid advance payment amount.');
+      return;
+    }
 
     setError('');
     setSuccess('');
@@ -1719,22 +1811,37 @@ export default function AdminDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          leadId,
-          amount: parseFloat(amountStr),
-          paymentMethod,
-          transactionRef
+          leadId: advanceModalLead.id,
+          amount: parsedAmount,
+          paymentMethod: advanceForm.paymentMethod || 'cash',
+          transactionRef: advanceForm.transactionRef || 'MANUAL_ADVANCE'
         })
       });
       const data = await res.json();
       if (res.ok) {
-        setSuccess('Manual advance recorded and booking confirmed!');
-        fetchDashboardData();
-        const targetLead = leads.find(l => String(l.id) === String(leadId));
-        if (targetLead) {
+        setSuccess('Manual advance recorded and booking confirmed successfully!');
+        const targetLead = advanceModalLead;
+        const sendWA = advanceForm.sendWhatsApp;
+        setAdvanceModalLead(null);
+        await fetchDashboardData();
+
+        setSelectedLeadForDetails(prev => {
+          if (!prev || String(prev.id) !== String(targetLead.id)) return prev;
+          return {
+            ...prev,
+            status: 'converted',
+            payment_status: 'advance_paid',
+            advance_paid: parsedAmount,
+            payment_method: advanceForm.paymentMethod,
+            transaction_ref: advanceForm.transactionRef
+          };
+        });
+
+        if (sendWA) {
           const waLink = getBookingConfirmationWhatsAppLink({
             ...targetLead,
             status: 'converted',
-            advance_paid: parseFloat(amountStr)
+            advance_paid: parsedAmount
           });
           if (waLink && waLink !== '#') {
             window.open(waLink, '_blank');
@@ -1751,7 +1858,11 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleOpenSettlementModal = (targetLead) => {
+  const handleRecordManualAdvance = (leadId) => {
+    handleOpenAdvanceModal(leadId);
+  };
+
+    const handleOpenSettlementModal = (targetLead) => {
     if (!targetLead) return;
     const freshLead = leads.find(l => String(l.id) === String(targetLead.id)) || targetLead;
     const totalPrice = parseFloat(freshLead.itinerary_price) || 0;
@@ -1762,7 +1873,7 @@ export default function AdminDashboard() {
 
     setSettlementModalLead(freshLead);
     setSettlementForm({
-      settlementType: freshLead.payment_status === 'partially_settled' ? 'partial_pending' : 'full',
+      settlementType: 'full',
       amount: balanceRemaining > 0 ? String(balanceRemaining) : '0',
       discount: '0',
       reason: freshLead.settlement_reason || '',
@@ -2343,8 +2454,13 @@ export default function AdminDashboard() {
           numTravelers: newLeadTravelers,
           adults: newLeadAdults,
           children: newLeadChildren,
+          numAdults: newLeadAdults,
+          numChildren: newLeadChildren,
+          elderly: newLeadElderly,
+          numElderly: newLeadElderly,
           childAges: newLeadChildren > 0 ? newLeadChildAges.map(a => parseInt(a, 10)) : [],
           startDate: newLeadStartDate || null,
+          endDate: newLeadEndDate || null,
           templateId: (selectedWalkInTemplateIds && selectedWalkInTemplateIds.length > 0) ? selectedWalkInTemplateIds[0] : null,
           templateIds: selectedWalkInTemplateIds,
           partnerId: newLeadPartnerId || null,
@@ -2366,10 +2482,12 @@ export default function AdminDashboard() {
         setNewLeadDates('');
         setNewLeadAdults(1);
         setNewLeadChildren(0);
+        setNewLeadElderly(0);
         setNewLeadChildAges([]);
         setNewLeadTravelers(1);
         setNewLeadVehicleCategory('');
         setNewLeadStartDate('');
+        setNewLeadEndDate('');
         setSelectedWalkInTemplateIds([]);
         setIsWalkInMultiDropdownOpen(false);
         setNewLeadPartnerId('');
@@ -2960,32 +3078,49 @@ export default function AdminDashboard() {
                               {getCleanTravelDates(lead)}
                             </span>
                           </div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
-                            <span title={lead.children > 0 ? (() => {
-                              let ages = '';
-                              try {
-                                const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
-                                if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
-                              } catch (e) {}
-                              return `${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${ages}`;
-                            })() : undefined}>
-                              {lead.num_travelers} guest(s) {lead.children > 0 ? `(${lead.adults || (lead.num_travelers - lead.children)}A, ${lead.children}C)` : ''}
-                            </span>
-                            <span 
-                              style={{
-                                fontSize: '0.7rem',
-                                padding: '0.05rem 0.35rem',
-                                borderRadius: '3px',
-                                fontWeight: '600',
-                                background: (lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.15)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.15)' : 'rgba(16,185,129,0.15)'),
-                                color: (lead.vehicle_category === 'J' ? '#c084fc' : lead.vehicle_category === 'Z' ? '#fb923c' : '#34d399'),
-                                border: `1px solid ${lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.3)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
-                              }}
-                              title={lead.vehicle_preference_details || `${lead.vehicle_count || 1}x ${lead.vehicle_category || 'T'}-Series (${lead.vehicle_category === 'J' ? '8-Seater' : lead.vehicle_category === 'Z' ? '6-Seater' : '4-Seater'})`}
-                            >
-                              🚗 {lead.vehicle_count || 1}x {lead.vehicle_category || 'T'}
-                            </span>
-                          </div>
+                          {(() => {
+                            const tDetails = getLeadTravelerDetails(lead);
+                            return (
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                <span title={tDetails.summaryStr} style={{ fontWeight: '500', color: '#E2E8F0' }}>
+                                  {tDetails.total} guest(s) <span style={{ color: 'var(--text-muted)' }}>{tDetails.tagsStr}</span>
+                                </span>
+                                {tDetails.elderly > 0 && (
+                                  <span 
+                                    style={{
+                                      fontSize: '0.68rem',
+                                      padding: '0.08rem 0.38rem',
+                                      borderRadius: '3px',
+                                      fontWeight: '700',
+                                      background: 'rgba(234, 179, 8, 0.15)',
+                                      color: '#facc15',
+                                      border: '1px solid rgba(234, 179, 8, 0.35)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '0.2rem'
+                                    }}
+                                    title="Senior Citizen / Elderly Passenger (60+ yrs) - Requires comfortable low-vibration vehicle seating & altitude care"
+                                  >
+                                    🧓 {tDetails.elderly} Senior{tDetails.elderly > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                                <span 
+                                  style={{
+                                    fontSize: '0.7rem',
+                                    padding: '0.05rem 0.35rem',
+                                    borderRadius: '3px',
+                                    fontWeight: '600',
+                                    background: (lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.15)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.15)' : 'rgba(16,185,129,0.15)'),
+                                    color: (lead.vehicle_category === 'J' ? '#c084fc' : lead.vehicle_category === 'Z' ? '#fb923c' : '#34d399'),
+                                    border: `1px solid ${lead.vehicle_category === 'J' ? 'rgba(168,85,247,0.3)' : lead.vehicle_category === 'Z' ? 'rgba(251,146,60,0.3)' : 'rgba(16,185,129,0.3)'}`
+                                  }}
+                                  title={lead.vehicle_preference_details || `${lead.vehicle_count || 1}x ${lead.vehicle_category || 'T'}-Series (${lead.vehicle_category === 'J' ? '8-Seater' : lead.vehicle_category === 'Z' ? '6-Seater' : '4-Seater'})`}
+                                >
+                                  🚗 {lead.vehicle_count || 1}x {lead.vehicle_category || 'T'}
+                                </span>
+                              </div>
+                            );
+                          })()}
                           {lead.itinerary_id && parseFloat(lead.itinerary_price) > 0 ? (
                             <div style={{
                               display: 'inline-flex',
@@ -3442,9 +3577,10 @@ export default function AdminDashboard() {
                             {lead.status === 'quoted' && lead.payment_status !== 'pending_verification' && lead.payment_status !== 'advance_paid' && (
                               <button
                                 type="button"
-                                onClick={() => handleRecordManualAdvance(lead.id)}
+                                onClick={() => handleOpenAdvanceModal(lead)}
                                 disabled={actionLoading}
                                 className="btn btn-outline"
+                                id={`btn-log-advance-${lead.id}`}
                                 style={{ padding: '0.35rem 0.55rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', whiteSpace: 'nowrap' }}
                                 title="Record manual cash or offline bank advance"
                               >
@@ -6599,10 +6735,13 @@ export default function AdminDashboard() {
                 </span>
               </div>
 
-              {/* Journey Start Date & Guest Summary */}
+              {/* Journey Dates (Start Date & End Date) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '0.75rem' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>Start Date (Journey Date)</label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <i className="fa-regular fa-calendar-check" style={{ color: 'var(--accent-teal)' }}></i>
+                    Travel Start Date
+                  </label>
                   <input 
                     type="date" 
                     className="form-control"
@@ -6612,35 +6751,46 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Total Guests</span>
-                    <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--accent-teal)' }}>
-                      👥 {newLeadTravelers} {newLeadTravelers === 1 ? 'Guest' : 'Guests'}
-                    </span>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <i className="fa-regular fa-calendar-xmark" style={{ color: '#38bdf8' }}></i>
+                    Travel End Date
                   </label>
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '0.55rem 0.85rem',
-                    background: 'var(--bg-surface-elevated)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 'var(--border-radius-sm)',
-                    fontSize: '0.9rem',
-                    fontWeight: '600',
-                    color: '#FFF'
-                  }}>
-                    <span>{newLeadAdults} Adult{newLeadAdults > 1 ? 's' : ''}{newLeadChildren > 0 ? ` + ${newLeadChildren} Child${newLeadChildren > 1 ? 'ren' : ''}` : ''}</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>(Auto-calculated)</span>
-                  </div>
+                  <input 
+                    type="date" 
+                    className="form-control"
+                    value={newLeadEndDate}
+                    onChange={(e) => setNewLeadEndDate(e.target.value)}
+                    min={newLeadStartDate || getTodayString()}
+                  />
                 </div>
               </div>
 
-              {/* Adults & Children Inputs */}
+              {/* Total Guests Summary Banner */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '0.6rem 0.9rem',
+                background: 'var(--bg-surface-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--border-radius-sm)',
+                marginBottom: '0.85rem'
+              }}>
+                <div style={{ fontSize: '0.85rem', color: '#CBD5E1', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span>👥 Total Guests:</span>
+                  <strong style={{ color: '#FFF' }}>{newLeadTravelers} {newLeadTravelers === 1 ? 'Guest' : 'Guests'}</strong>
+                  <span style={{ color: 'var(--accent-teal)', fontSize: '0.78rem' }}>
+                    ({newLeadAdults}A{newLeadChildren > 0 ? `, ${newLeadChildren}C` : ''}{newLeadElderly > 0 ? `, ${newLeadElderly}S` : ''})
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>(Auto-calculated)</span>
+              </div>
+
+              {/* Adults, Children & Elderly 3-Way Grid */}
               <div style={{ 
                 display: 'grid', 
-                gridTemplateColumns: '1fr 1fr', 
-                gap: '1rem', 
+                gridTemplateColumns: '1fr 1fr 1fr', 
+                gap: '0.75rem', 
                 marginBottom: '1rem',
                 background: 'rgba(255,255,255,0.02)',
                 padding: '0.85rem',
@@ -6648,9 +6798,9 @@ export default function AdminDashboard() {
                 border: '1px solid var(--border)'
               }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <label style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     <i className="fa-solid fa-user" style={{ color: 'var(--secondary)' }}></i>
-                    No. of Adults *
+                    Adults *
                   </label>
                   <input 
                     type="number" 
@@ -6661,14 +6811,14 @@ export default function AdminDashboard() {
                     placeholder="1"
                     required
                   />
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
-                    Age 12+ years
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                    12–59 yrs
                   </span>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <label style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                     <i className="fa-solid fa-child" style={{ color: '#38bdf8' }}></i>
-                    No. of Children
+                    Children
                   </label>
                   <input 
                     type="number" 
@@ -6679,8 +6829,27 @@ export default function AdminDashboard() {
                     onChange={(e) => handleChildrenChange(e.target.value)}
                     placeholder="0"
                   />
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
-                    Age 0-11 years (requires age)
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+                    0–11 yrs
+                  </span>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#facc15' }}>
+                    <i className="fa-solid fa-person-cane" style={{ color: '#facc15' }}></i>
+                    Elderly
+                  </label>
+                  <input 
+                    type="number" 
+                    className="form-control"
+                    min="0"
+                    max="10"
+                    value={newLeadElderly}
+                    onChange={(e) => handleElderlyChange(e.target.value)}
+                    placeholder="0"
+                    style={{ borderColor: newLeadElderly > 0 ? 'rgba(234, 179, 8, 0.4)' : undefined }}
+                  />
+                  <span style={{ fontSize: '0.68rem', color: '#facc15', marginTop: '0.2rem', display: 'block' }}>
+                    60+ yrs 🧓
                   </span>
                 </div>
               </div>
@@ -8053,6 +8222,154 @@ export default function AdminDashboard() {
                 </div>
               )}
 
+              {/* Payment Receipts & Installment Ledger Section */}
+              <div style={{
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
+                borderRadius: '10px',
+                padding: '1.15rem',
+                marginBottom: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                    <i className="fa-solid fa-receipt" style={{ color: '#34D399' }}></i>
+                    Payment Receipts & Installment Ledger
+                    {lead.payment_history && lead.payment_history.length > 0 && (
+                      <span style={{ fontSize: '0.72rem', background: 'rgba(52, 211, 153, 0.15)', color: '#34D399', padding: '0.1rem 0.45rem', borderRadius: '10px', fontWeight: 600 }}>
+                        {lead.payment_history.length} Receipt{lead.payment_history.length > 1 ? 's' : ''}
+                      </span>
+                    )}
+                  </h4>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Link
+                      href={`/admin/invoice/${lead.id}`}
+                      target="_blank"
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '0.25rem 0.65rem',
+                        fontSize: '0.75rem',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.35rem',
+                        background: 'rgba(56, 189, 248, 0.12)',
+                        border: '1px solid rgba(56, 189, 248, 0.35)',
+                        color: '#38BDF8'
+                      }}
+                    >
+                      <i className="fa-solid fa-file-invoice"></i> View Invoice
+                    </Link>
+                    {!isSettled && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedLeadForDetails(null);
+                          setSettlementModalLead(lead);
+                        }}
+                        style={{
+                          padding: '0.25rem 0.65rem',
+                          fontSize: '0.75rem',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem',
+                          background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.2), rgba(5, 150, 105, 0.3))',
+                          border: '1px solid rgba(16, 185, 129, 0.5)',
+                          color: '#34D399',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600
+                        }}
+                      >
+                        <i className="fa-solid fa-plus"></i> Collect Next Installment
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {lead.payment_history && lead.payment_history.length > 0 ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {lead.payment_history.map((pmt, idx) => {
+                      const pmtDate = pmt.payment_date ? new Date(pmt.payment_date) : null;
+                      const dateStr = pmtDate 
+                        ? pmtDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                        : 'Recorded';
+                      const isAdv = pmt.payment_type === 'advance';
+                      const isInst = pmt.payment_type === 'installment';
+
+                      return (
+                        <div key={pmt.id || idx} style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          background: 'rgba(0, 0, 0, 0.25)',
+                          border: '1px solid rgba(255, 255, 255, 0.06)',
+                          borderRadius: '8px',
+                          padding: '0.65rem 0.85rem',
+                          fontSize: '0.8rem',
+                          flexWrap: 'wrap',
+                          gap: '0.5rem'
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                            <div style={{
+                              width: '28px',
+                              height: '28px',
+                              borderRadius: '50%',
+                              background: isAdv ? 'rgba(16, 185, 129, 0.2)' : isInst ? 'rgba(245, 158, 11, 0.2)' : 'rgba(56, 189, 248, 0.2)',
+                              color: isAdv ? '#34D399' : isInst ? '#FBBF24' : '#38BDF8',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              fontSize: '0.75rem',
+                              fontWeight: 700
+                            }}>
+                              {idx + 1}
+                            </div>
+                            <div>
+                              <div style={{ fontWeight: 700, color: '#FFF' }}>
+                                {pmt.title || (isAdv ? 'Initial Advance Deposit' : isInst ? 'Mid-Trip Installment' : 'Final Settlement')}
+                              </div>
+                              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', marginTop: '2px' }}>
+                                <span><i className="fa-regular fa-calendar" style={{ marginRight: '3px' }}></i>{dateStr}</span>
+                                <span>•</span>
+                                <span style={{ textTransform: 'capitalize' }}>
+                                  <i className="fa-solid fa-money-bill-wave" style={{ marginRight: '3px' }}></i>
+                                  {(pmt.payment_method || 'Cash').replace(/_/g, ' ')}
+                                </span>
+                                {pmt.transaction_ref && (
+                                  <>
+                                    <span>•</span>
+                                    <code style={{ color: '#FBBF24', fontSize: '0.7rem' }}>{pmt.transaction_ref}</code>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: '0.95rem', fontWeight: 800, color: '#34D399' }}>
+                              +₹{(parseFloat(pmt.amount) || 0).toLocaleString('en-IN')}
+                            </div>
+                            <span style={{ fontSize: '0.68rem', color: '#34D399', background: 'rgba(52, 211, 153, 0.12)', padding: '1px 6px', borderRadius: '4px' }}>
+                              Credited ✓
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div style={{ textAlign: 'center', padding: '1rem', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                    {advancePaid > 0 ? (
+                      <div>
+                        <div style={{ color: '#34D399', fontWeight: 600 }}>Initial Advance Paid: ₹{advancePaid.toLocaleString('en-IN')}</div>
+                        <div style={{ fontSize: '0.72rem', marginTop: '4px' }}>No intermediate installments recorded.</div>
+                      </div>
+                    ) : (
+                      'No payment history records found.'
+                    )}
+                  </div>
+                )}
+              </div>
+
               {/* Lead Details Grid */}
               <div style={{ background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1.15rem', marginBottom: '1.25rem' }}>
                 <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.9rem', color: '#FFF', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -8071,12 +8388,28 @@ export default function AdminDashboard() {
                     <strong style={{ color: '#38BDF8' }}>{lead.itinerary_title || lead.package_name || 'Custom Plan'}</strong>
                   </div>
 
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Guests Breakdown</span>
-                    <strong style={{ color: '#FFF' }}>
-                      {lead.num_travelers} guest(s) {lead.children > 0 ? `(${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${childAgesArray.length > 0 ? ` - Ages: ${childAgesArray.join(', ')}` : ''})` : ''}
-                    </strong>
-                  </div>
+                  {(() => {
+                    const mDetails = getLeadTravelerDetails(lead);
+                    return (
+                      <div>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Guests Breakdown</span>
+                        <strong style={{ color: '#FFF' }}>
+                          {mDetails.total} guest(s) {mDetails.tagsStr}
+                        </strong>
+                        <div style={{ fontSize: '0.75rem', color: '#CBD5E1', marginTop: '0.2rem', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                          <span>• Adults: <strong>{mDetails.adults}</strong> (12–59 yrs)</span>
+                          {mDetails.children > 0 && (
+                            <span>• Children: <strong>{mDetails.children}</strong> (0–11 yrs){mDetails.childAges.length > 0 ? ` [Ages: ${mDetails.childAges.join(', ')}]` : ''}</span>
+                          )}
+                          {mDetails.elderly > 0 && (
+                            <span style={{ color: '#FDE047', fontWeight: 600 }}>
+                              • Elderly / Seniors: <strong>{mDetails.elderly}</strong> (60+ yrs) 🧓
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.74rem', display: 'block' }}>Vehicle Allocated</span>
@@ -8111,7 +8444,44 @@ export default function AdminDashboard() {
                     </div>
                   )}
                 </div>
-              </div>
+              
+                {/* Senior Citizen High-Altitude Travel Care Advisory Banner */}
+                {(() => {
+                  const mDetails = getLeadTravelerDetails(lead);
+                  if (mDetails.elderly <= 0) return null;
+                  return (
+                    <div style={{
+                      marginTop: '0.9rem',
+                      background: 'rgba(234, 179, 8, 0.1)',
+                      border: '1px solid rgba(234, 179, 8, 0.35)',
+                      borderRadius: '8px',
+                      padding: '0.65rem 0.85rem',
+                      fontSize: '0.78rem',
+                      color: '#FEF08A',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.6rem'
+                    }}>
+                      <i className="fa-solid fa-heart-pulse" style={{ color: '#FACC15', fontSize: '1rem', flexShrink: 0 }}></i>
+                      <div>
+                        <strong style={{ color: '#FDE047' }}>Senior Citizen Travel Care Required:</strong> Contains {mDetails.elderly} senior passenger(s) (60+ yrs). Ensure lower-vibration vehicle seating (middle row captain seats in Innova Crysta/Scorpio) and plan comfortable acclimatization pacing for high-altitude passes (Gurudongmar / Nathula).
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Lead Special Notes / Inclusions */}
+                {lead.notes && (
+                  <div style={{ marginTop: '0.85rem', background: 'rgba(255,255,255,0.03)', padding: '0.6rem 0.85rem', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.08)' }}>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem', display: 'block', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      Guest Inquiry Notes & Special Requests
+                    </span>
+                    <span style={{ color: '#E2E8F0', fontSize: '0.82rem', marginTop: '0.2rem', display: 'block', lineHeight: 1.4 }}>
+                      {lead.notes}
+                    </span>
+                  </div>
+                )}
+</div>
 
               {/* Quick Actions & Links */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.6rem', borderTop: '1px solid rgba(255, 255, 255, 0.1)', paddingTop: '1.1rem' }}>
@@ -8132,10 +8502,9 @@ export default function AdminDashboard() {
                   {lead.status !== 'completed' && (
                     <button
                       type="button"
-                      onClick={() => {
-                        handleRecordManualAdvance(lead.id);
-                      }}
+                      onClick={() => handleOpenAdvanceModal(lead)}
                       className="btn btn-outline"
+                      id={`btn-drawer-log-advance-${lead.id}`}
                       style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}
                       title="Update or record advance payment"
                     >
@@ -8306,6 +8675,313 @@ export default function AdminDashboard() {
         );
       })()}
 
+      {/* Record Advance Payment Modal */}
+      {advanceModalLead && (() => {
+        const lead = advanceModalLead;
+        const totalPrice = parseFloat(lead.itinerary_price) || 0;
+        const required10Percent = parseFloat(lead.advance_amount) || Math.round(totalPrice * 0.1) || 0;
+        const existingAdvance = parseFloat(lead.advance_paid) || 0;
+        const currentAmount = parseFloat(advanceForm.amount) || 0;
+        const balanceOnArrival = Math.max(0, totalPrice - currentAmount);
+
+        return (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.82)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1200,
+            padding: '1rem'
+          }}>
+            <div className="animate-fade-in glass-card" style={{
+              maxWidth: '640px',
+              width: '100%',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '1.75rem',
+              borderRadius: '16px',
+              background: '#0f172a',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+              position: 'relative'
+            }}>
+              {/* Modal Header */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.25rem', borderBottom: '1px solid rgba(255, 255, 255, 0.1)', paddingBottom: '0.9rem' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <div style={{ width: '38px', height: '38px', borderRadius: '8px', background: 'rgba(16, 185, 129, 0.18)', border: '1px solid rgba(16, 185, 129, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10B981', fontSize: '1.2rem' }}>
+                      <i className="fa-solid fa-hand-holding-dollar"></i>
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, color: '#FFF', fontSize: '1.25rem', fontWeight: 700 }}>
+                        {existingAdvance > 0 ? 'Update Advance Payment' : 'Record Advance & Confirm Booking'}
+                      </h3>
+                      <p style={{ margin: '0.15rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                        Guest: <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> ({lead.client_phone})
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCloseAdvanceModal}
+                  style={{ background: 'transparent', border: 'none', color: 'rgba(255, 255, 255, 0.6)', cursor: 'pointer', fontSize: '1.2rem', padding: '0.2rem 0.5rem', borderRadius: '4px' }}
+                >
+                  <i className="fa-solid fa-xmark"></i>
+                </button>
+              </div>
+
+              {/* Trip & Pricing Context Card */}
+              <div style={{ background: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(255, 255, 255, 0.08)', borderRadius: '10px', padding: '1rem', marginBottom: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.85rem', color: '#38BDF8', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <i className="fa-solid fa-map-location-dot"></i> {lead.package_name || 'Custom Tour'}
+                  </span>
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <i className="fa-solid fa-calendar-days"></i> {getCleanTravelDates(lead)}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
+                  <div style={{ background: 'rgba(255, 255, 255, 0.04)', padding: '0.65rem', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(255, 255, 255, 0.05)' }}>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Package</span>
+                    <strong style={{ fontSize: '1rem', color: '#FFF' }}>₹{totalPrice.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ background: 'rgba(16, 185, 129, 0.1)', padding: '0.65rem', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(16, 185, 129, 0.3)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#34D399', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>10% Advance Req.</span>
+                    <strong style={{ fontSize: '1rem', color: '#10B981' }}>₹{required10Percent.toLocaleString('en-IN')}</strong>
+                  </div>
+                  <div style={{ background: 'rgba(56, 189, 248, 0.08)', padding: '0.65rem', borderRadius: '8px', textAlign: 'center', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#38BDF8', display: 'block', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Balance on Arrival</span>
+                    <strong style={{ fontSize: '1rem', color: balanceOnArrival === 0 ? '#10B981' : '#E2E8F0' }}>
+                      ₹{balanceOnArrival.toLocaleString('en-IN')}
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Advance Input Form */}
+              <form onSubmit={handleSubmitAdvanceModal}>
+                {/* Amount Field */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.45rem' }}>
+                    <label style={{ fontSize: '0.85rem', color: '#E2E8F0', fontWeight: 600 }}>
+                      Advance Amount Received (₹) <span style={{ color: '#EF4444' }}>*</span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      Quick 1-Click Amounts:
+                    </span>
+                  </div>
+
+                  {/* Preset Amount Chips */}
+                  <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+                    {required10Percent > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setAdvanceForm(prev => ({ ...prev, amount: String(required10Percent) }))}
+                        className="btn"
+                        style={{
+                          padding: '0.25rem 0.6rem',
+                          fontSize: '0.75rem',
+                          background: parseFloat(advanceForm.amount) === required10Percent ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                          borderColor: parseFloat(advanceForm.amount) === required10Percent ? '#10B981' : 'rgba(255, 255, 255, 0.1)',
+                          color: parseFloat(advanceForm.amount) === required10Percent ? '#34D399' : '#CBD5E1'
+                        }}
+                      >
+                        10% (₹{required10Percent.toLocaleString('en-IN')})
+                      </button>
+                    )}
+                    {totalPrice > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setAdvanceForm(prev => ({ ...prev, amount: String(Math.round(totalPrice * 0.25)) }))}
+                          className="btn"
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            fontSize: '0.75rem',
+                            background: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.25) ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                            borderColor: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.25) ? '#10B981' : 'rgba(255, 255, 255, 0.1)',
+                            color: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.25) ? '#34D399' : '#CBD5E1'
+                          }}
+                        >
+                          25% (₹{Math.round(totalPrice * 0.25).toLocaleString('en-IN')})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdvanceForm(prev => ({ ...prev, amount: String(Math.round(totalPrice * 0.5)) }))}
+                          className="btn"
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            fontSize: '0.75rem',
+                            background: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.5) ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                            borderColor: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.5) ? '#10B981' : 'rgba(255, 255, 255, 0.1)',
+                            color: parseFloat(advanceForm.amount) === Math.round(totalPrice * 0.5) ? '#34D399' : '#CBD5E1'
+                          }}
+                        >
+                          50% (₹{Math.round(totalPrice * 0.5).toLocaleString('en-IN')})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setAdvanceForm(prev => ({ ...prev, amount: String(totalPrice) }))}
+                          className="btn"
+                          style={{
+                            padding: '0.25rem 0.6rem',
+                            fontSize: '0.75rem',
+                            background: parseFloat(advanceForm.amount) === totalPrice ? 'rgba(16, 185, 129, 0.25)' : 'rgba(255, 255, 255, 0.06)',
+                            borderColor: parseFloat(advanceForm.amount) === totalPrice ? '#10B981' : 'rgba(255, 255, 255, 0.1)',
+                            color: parseFloat(advanceForm.amount) === totalPrice ? '#34D399' : '#CBD5E1'
+                          }}
+                        >
+                          100% Full (₹{totalPrice.toLocaleString('en-IN')})
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  <div style={{ position: 'relative' }}>
+                    <span style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)', fontWeight: 700, fontSize: '1.1rem' }}>
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      id="advance-amount-input"
+                      value={advanceForm.amount}
+                      onChange={(e) => setAdvanceForm(prev => ({ ...prev, amount: e.target.value }))}
+                      required
+                      min="1"
+                      placeholder="e.g. 2200"
+                      className="form-control"
+                      style={{ paddingLeft: '2.4rem', fontSize: '1.1rem', fontWeight: 700, color: '#FFF', background: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                    />
+                  </div>
+                </div>
+
+                {/* Payment Method Selector */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: '#E2E8F0', fontWeight: 600, display: 'block', marginBottom: '0.45rem' }}>
+                    Payment Mode
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.5rem' }}>
+                    {[
+                      { key: 'cash', label: 'Cash', icon: 'fa-solid fa-money-bill-wave' },
+                      { key: 'upi_qr', label: 'UPI / QR', icon: 'fa-solid fa-qrcode' },
+                      { key: 'bank_transfer', label: 'Bank Transfer', icon: 'fa-solid fa-building-columns' },
+                      { key: 'card', label: 'Card / POS', icon: 'fa-solid fa-credit-card' }
+                    ].map(mode => (
+                      <button
+                        key={mode.key}
+                        type="button"
+                        onClick={() => setAdvanceForm(prev => ({
+                          ...prev,
+                          paymentMethod: mode.key,
+                          transactionRef: prev.transactionRef === 'CASH_COLLECTED' && mode.key !== 'cash' ? (mode.key === 'upi_qr' ? 'UPI_REF_' : 'BANK_TXN_') : prev.transactionRef
+                        }))}
+                        style={{
+                          padding: '0.6rem 0.4rem',
+                          borderRadius: '8px',
+                          border: `1px solid ${advanceForm.paymentMethod === mode.key ? '#10B981' : 'rgba(255, 255, 255, 0.12)'}`,
+                          background: advanceForm.paymentMethod === mode.key ? 'rgba(16, 185, 129, 0.18)' : 'rgba(255, 255, 255, 0.04)',
+                          color: advanceForm.paymentMethod === mode.key ? '#34D399' : '#CBD5E1',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <i className={mode.icon} style={{ fontSize: '1.1rem' }}></i>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{mode.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Reference / Notes */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <label style={{ fontSize: '0.85rem', color: '#E2E8F0', fontWeight: 600, display: 'block', marginBottom: '0.45rem' }}>
+                    Transaction Reference / Remarks
+                  </label>
+                  <input
+                    type="text"
+                    id="advance-ref-input"
+                    value={advanceForm.transactionRef}
+                    onChange={(e) => setAdvanceForm(prev => ({ ...prev, transactionRef: e.target.value }))}
+                    placeholder="e.g. CASH_COLLECTED, UPI Ref / UTR No, Cheque No"
+                    className="form-control"
+                    style={{ fontSize: '0.85rem', color: '#FFF', background: 'rgba(0, 0, 0, 0.4)', borderColor: 'rgba(255, 255, 255, 0.2)' }}
+                  />
+                </div>
+
+                {/* WhatsApp Confirmation Checkbox */}
+                <div style={{ marginBottom: '1.5rem', background: 'rgba(37, 211, 102, 0.08)', border: '1px solid rgba(37, 211, 102, 0.25)', borderRadius: '8px', padding: '0.75rem 0.9rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', cursor: 'pointer', margin: 0, color: '#A7F3D0', fontSize: '0.82rem', fontWeight: 500 }}>
+                    <input
+                      type="checkbox"
+                      checked={advanceForm.sendWhatsApp}
+                      onChange={(e) => setAdvanceForm(prev => ({ ...prev, sendWhatsApp: e.target.checked }))}
+                      style={{ width: '16px', height: '16px', accentColor: '#10B981', cursor: 'pointer' }}
+                    />
+                    <span>
+                      <i className="fa-brands fa-whatsapp" style={{ color: '#25D366', marginRight: '0.25rem' }}></i>
+                      Open WhatsApp Booking Confirmation & Advance Receipt immediately after logging
+                    </span>
+                  </label>
+                </div>
+
+                {/* Modal Footer Buttons */}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleCloseAdvanceModal}
+                    className="btn btn-secondary"
+                    style={{ padding: '0.55rem 1.1rem', fontSize: '0.85rem' }}
+                    disabled={actionLoading}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    id="btn-submit-advance"
+                    disabled={actionLoading || !advanceForm.amount}
+                    className="btn btn-primary"
+                    style={{
+                      padding: '0.55rem 1.4rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      background: 'linear-gradient(135deg, #10B981, #059669)',
+                      border: 'none',
+                      color: '#FFF',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                      boxShadow: '0 4px 14px rgba(16, 185, 129, 0.4)'
+                    }}
+                  >
+                    {actionLoading ? (
+                      <>
+                        <i className="fa-solid fa-spinner fa-spin"></i> Processing...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fa-solid fa-check"></i> Confirm & Log Advance (₹{currentAmount ? currentAmount.toLocaleString('en-IN') : '0'})
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Payment Settlement Modal (Full & Partial with Reason) */}
       {settlementModalLead && (() => {
         const lead = settlementModalLead;
@@ -8387,11 +9063,11 @@ export default function AdminDashboard() {
                 </button>
               </div>
 
-              {/* Financial Snapshot Overview */}
+              {/* Financial Snapshot Overview - Multi-Stage Payments */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: '0.75rem',
+                gridTemplateColumns: prevSettlementPaid > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)',
+                gap: '0.6rem',
                 background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '10px',
@@ -8400,16 +9076,24 @@ export default function AdminDashboard() {
                 textAlign: 'center'
               }}>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Package</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#FFF', marginTop: '0.2rem' }}>₹{totalPrice.toLocaleString('en-IN')}</div>
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Package</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FFF', marginTop: '0.2rem' }}>₹{totalPrice.toLocaleString('en-IN')}</div>
                 </div>
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Paid So Far</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 700, color: '#34D399', marginTop: '0.2rem' }}>₹{totalAlreadyPaid.toLocaleString('en-IN')}</div>
+                  <span style={{ fontSize: '0.68rem', color: '#10B981', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>1. Advance (Pre-Trip)</span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#34D399', marginTop: '0.2rem' }}>₹{advancePaid.toLocaleString('en-IN')}</div>
                 </div>
+                {prevSettlementPaid > 0 && (
+                  <div>
+                    <span style={{ fontSize: '0.68rem', color: '#FBBF24', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>2. Mid-Trip Paid</span>
+                    <div style={{ fontSize: '1.05rem', fontWeight: 700, color: '#FBBF24', marginTop: '0.2rem' }}>₹{prevSettlementPaid.toLocaleString('en-IN')}</div>
+                  </div>
+                )}
                 <div>
-                  <span style={{ fontSize: '0.7rem', color: '#F87171', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>Balance Pending</span>
-                  <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#F87171', marginTop: '0.2rem' }}>₹{balancePending.toLocaleString('en-IN')}</div>
+                  <span style={{ fontSize: '0.68rem', color: balancePending > 0 ? '#F87171' : '#34D399', textTransform: 'uppercase', letterSpacing: '0.5px', fontWeight: 600 }}>
+                    {balancePending > 0 ? '3. Balance Due' : 'Balance Settled'}
+                  </span>
+                  <div style={{ fontSize: '1.05rem', fontWeight: 800, color: balancePending > 0 ? '#F87171' : '#34D399', marginTop: '0.2rem' }}>₹{balancePending.toLocaleString('en-IN')}</div>
                 </div>
               </div>
 

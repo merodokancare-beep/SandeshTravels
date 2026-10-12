@@ -53,20 +53,22 @@ export class LeadModel {
     return res.rows[0] || null;
   }
 
-  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, adults = 1, children = 0, childAges = [], child_ages = null, status = 'new', startDate = null, source = null, packageName = null, vehicleType = null, vehicleCategory = 'T', vehicleCount = 1, vehiclePreferenceDetails = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
+  static async create({ partnerId, clientName, clientPhone, travelDates, numTravelers, adults = 1, children = 0, numAdults = null, numChildren = null, numElderly = 0, elderly = 0, num_elderly = 0, childAges = [], child_ages = null, status = 'new', startDate = null, endDate = null, end_date = null, source = null, packageName = null, vehicleType = null, vehicleCategory = 'T', vehicleCount = 1, vehiclePreferenceDetails = null, notes = null, attendedBy = null, attendedByName = null, attendedAt = null, advanceAmount = 0, advancePaid = 0, paymentStatus = 'unpaid', paymentMethod = null, transactionRef = null }, client = null) {
     const q = client ? client.query.bind(client) : query;
     const determinedSource = source || (partnerId ? 'partner' : 'direct');
     const finalAttendedAt = attendedBy && !attendedAt ? new Date() : attendedAt;
-    const parsedAdults = parseInt(adults, 10) || 1;
-    const parsedChildren = parseInt(children, 10) || 0;
-    const finalTravelers = numTravelers !== undefined ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren)) : (parsedAdults + parsedChildren);
+    const parsedAdults = parseInt(numAdults !== null && numAdults !== undefined ? numAdults : adults, 10) || 1;
+    const parsedChildren = parseInt(numChildren !== null && numChildren !== undefined ? numChildren : children, 10) || 0;
+    const parsedElderly = parseInt(numElderly || num_elderly || elderly, 10) || 0;
+    const finalTravelers = numTravelers !== undefined ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren + parsedElderly)) : (parsedAdults + parsedChildren + parsedElderly);
+    const finalEndDate = endDate || end_date || null;
     const finalChildAges = child_ages !== null && child_ages !== undefined ? (typeof child_ages === 'string' ? child_ages : JSON.stringify(child_ages)) : JSON.stringify(Array.isArray(childAges) ? childAges : []);
 
     const res = await q(
-      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, adults, children, child_ages, status, start_date, source, package_name, vehicle_type, vehicle_category, vehicle_count, vehicle_preference_details, notes, attended_by, attended_by_name, attended_at, advance_amount, advance_paid, payment_status, payment_method, transaction_ref)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      `INSERT INTO leads (partner_id, client_name, client_phone, travel_dates, num_travelers, adults, children, num_adults, num_children, num_elderly, elderly, child_ages, status, start_date, end_date, source, package_name, vehicle_type, vehicle_category, vehicle_count, vehicle_preference_details, notes, attended_by, attended_by_name, attended_at, advance_amount, advance_paid, payment_status, payment_method, transaction_ref)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
        RETURNING *`,
-      [partnerId, clientName, clientPhone, travelDates || null, finalTravelers, parsedAdults, parsedChildren, finalChildAges, status, startDate, determinedSource, packageName, vehicleType, vehicleCategory || 'T', parseInt(vehicleCount, 10) || 1, vehiclePreferenceDetails || null, notes, attendedBy, attendedByName, finalAttendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef]
+      [partnerId, clientName, clientPhone, travelDates || null, finalTravelers, parsedAdults, parsedChildren, parsedAdults, parsedChildren, parsedElderly, parsedElderly, finalChildAges, status, startDate, finalEndDate, determinedSource, packageName, vehicleType, vehicleCategory || 'T', parseInt(vehicleCount, 10) || 1, vehiclePreferenceDetails || null, notes, attendedBy, attendedByName, finalAttendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef]
     );
     return res.rows[0];
   }
@@ -77,7 +79,7 @@ export class LeadModel {
     const values = [];
     let idx = 1;
 
-    const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, status, startDate, source, packageName, vehicleType, vehicleCategory, vehicleCount, vehiclePreferenceDetails, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy, settlementAmount, settlementDiscount, settlementReason, settlementMethod, settlementRef, settledAt, settledBy, settledByName } = fields;
+    const { clientName, clientPhone, travelDates, numTravelers, adults, children, numAdults, numChildren, numElderly, elderly, num_elderly, childAges, child_ages, status, startDate, endDate, end_date, source, packageName, vehicleType, vehicleCategory, vehicleCount, vehiclePreferenceDetails, notes, attendedBy, attendedByName, attendedAt, advanceAmount, advancePaid, paymentStatus, paymentMethod, transactionRef, advanceSubmittedAt, advanceVerifiedAt, advanceVerifiedBy, settlementAmount, settlementDiscount, settlementReason, settlementMethod, settlementRef, settledAt, settledBy, settledByName } = fields;
 
     if (clientName !== undefined) {
       updates.push(`client_name = $${idx++}`);
@@ -95,13 +97,26 @@ export class LeadModel {
       updates.push(`num_travelers = $${idx++}`);
       values.push(numTravelers);
     }
-    if (adults !== undefined) {
+    if (adults !== undefined || numAdults !== undefined) {
+      const aVal = parseInt(numAdults !== undefined ? numAdults : adults, 10) || 1;
       updates.push(`adults = $${idx++}`);
-      values.push(parseInt(adults, 10) || 1);
+      values.push(aVal);
+      updates.push(`num_adults = $${idx++}`);
+      values.push(aVal);
     }
-    if (children !== undefined) {
+    if (children !== undefined || numChildren !== undefined) {
+      const cVal = parseInt(numChildren !== undefined ? numChildren : children, 10) || 0;
       updates.push(`children = $${idx++}`);
-      values.push(parseInt(children, 10) || 0);
+      values.push(cVal);
+      updates.push(`num_children = $${idx++}`);
+      values.push(cVal);
+    }
+    if (elderly !== undefined || numElderly !== undefined || num_elderly !== undefined) {
+      const eVal = parseInt(numElderly !== undefined ? numElderly : (num_elderly !== undefined ? num_elderly : elderly), 10) || 0;
+      updates.push(`num_elderly = $${idx++}`);
+      values.push(eVal);
+      updates.push(`elderly = $${idx++}`);
+      values.push(eVal);
     }
     if (childAges !== undefined || child_ages !== undefined) {
       const cAges = child_ages !== undefined ? child_ages : childAges;
@@ -118,6 +133,10 @@ export class LeadModel {
     if (startDate !== undefined) {
       updates.push(`start_date = $${idx++}`);
       values.push(startDate || null);
+    }
+    if (endDate !== undefined || end_date !== undefined) {
+      updates.push(`end_date = $${idx++}`);
+      values.push(endDate !== undefined ? endDate : end_date);
     }
     if (source !== undefined) {
       updates.push(`source = $${idx++}`);

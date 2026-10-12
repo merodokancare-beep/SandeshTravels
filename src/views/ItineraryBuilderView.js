@@ -6,6 +6,36 @@ import Link from 'next/link';
 import { COUNTRY_CODES, parsePhoneNumber, formatFullPhoneNumber } from '@/lib/phone';
 import { ToastContainer } from '@/components/Toast';
 
+function parseDateRobust(dateInput) {
+  if (!dateInput) return null;
+  if (dateInput instanceof Date && !isNaN(dateInput.getTime())) {
+    return new Date(dateInput.getFullYear(), dateInput.getMonth(), dateInput.getDate());
+  }
+  const str = String(dateInput).trim();
+  // When an ISO timestamp is returned by database (contains T or Z), parse into local date
+  if (str.includes('T') || str.includes('Z')) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+  }
+  const ymdMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (ymdMatch) {
+    return new Date(parseInt(ymdMatch[1], 10), parseInt(ymdMatch[2], 10) - 1, parseInt(ymdMatch[3], 10));
+  }
+  const parsed = new Date(str);
+  return isNaN(parsed.getTime()) ? null : new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+}
+
+function formatToYmdString(dateInput) {
+  const d = parseDateRobust(dateInput);
+  if (!d) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function getFormattedDateForDay(startDate, dayNum) {
   if (!startDate) return '';
   let date;
@@ -58,6 +88,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
   const [localPhone, setLocalPhone] = useState('');
   const [clientPhone, setClientPhone] = useState('');
   const [travelDates, setTravelDates] = useState('');
+  const [requestedDaysSummary, setRequestedDaysSummary] = useState('');
+  const [travelerDaysHint, setTravelerDaysHint] = useState(0);
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [childAges, setChildAges] = useState([]);
@@ -337,10 +369,109 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           setVehicleCount(loadedVCount);
 
           if (itinData.lead.start_date) {
-            setStartDate(itinData.lead.start_date.substring(0, 10));
+            setStartDate(formatToYmdString(itinData.lead.start_date));
           }
         }
         
+        // 2. Fetch registries & templates first so we can accurately match and prefill
+        const hotelsRes = await fetch('/api/admin/hotels');
+        const hotelsData = await hotelsRes.json();
+        setHotels(hotelsData.hotels || []);
+
+        const driversRes = await fetch('/api/admin/fleet');
+        const driversData = await driversRes.json();
+        setDrivers(driversData.fleet || []);
+
+        const templatesRes = await fetch('/api/admin/templates');
+        const templatesData = await templatesRes.json();
+        const loadedTemplates = templatesData.templates || [];
+        setTemplates(loadedTemplates);
+
+        // 3. Determine requested duration and matching preset blueprint template
+        let calculatedDays = 0;
+        let requestedDesc = '';
+        let matchedTemplate = null;
+
+        const scanPackage = (itinData.lead?.package_name || '').trim();
+        const scanText = `${scanPackage} ${itinData.lead?.travel_dates || ''}`;
+
+        // A. Priority 1: Package name explicitly states days/nights (e.g. "5D/4N", "5 Days", "4N/5D", "4 Days")
+        const pkgMatch = scanText.match(/(\d+)\s*D(?:ays?)?(?:\s*[\/\-]\s*(\d+)\s*N(?:ights?)?)?/i)
+                      || scanText.match(/(\d+)\s*N(?:ights?)?\s*[\/\-]\s*(\d+)\s*D(?:ays?)?/i);
+
+        if (pkgMatch) {
+          const isNightFirst = /^\d+\s*N/i.test(pkgMatch[0]);
+          const pDays = parseInt(isNightFirst ? pkgMatch[2] : pkgMatch[1], 10);
+          const pNights = parseInt(isNightFirst ? pkgMatch[1] : (pkgMatch[2] || (pDays - 1)), 10);
+          if (pDays >= 1 && pDays <= 30) {
+            calculatedDays = pDays;
+            requestedDesc = `${pDays} Days / ${pNights} Nights (${scanPackage || 'Package Inquiry'})`;
+          }
+        }
+
+        // B. Priority 2: Look for a matching template in database that matches package name and duration
+        if (loadedTemplates.length > 0 && scanPackage) {
+          const lowerPkg = scanPackage.toLowerCase();
+          // Find template matching package keyword AND duration if duration known
+          matchedTemplate = loadedTemplates.find(t => {
+            const tName = t.name.toLowerCase();
+            const sameKeyword = (lowerPkg.includes('north') && tName.includes('north')) ||
+                                (lowerPkg.includes('gangtok') && tName.includes('gangtok')) ||
+                                (lowerPkg.includes('pelling') && tName.includes('pelling')) ||
+                                (lowerPkg.includes('silk') && tName.includes('silk')) ||
+                                tName.includes(lowerPkg) ||
+                                lowerPkg.includes(tName);
+            // Require matching days count if calculatedDays is known
+            if (calculatedDays > 0) {
+              return sameKeyword && t.total_days === calculatedDays;
+            }
+            return sameKeyword;
+          });
+
+          if (matchedTemplate) {
+            calculatedDays = matchedTemplate.total_days;
+            if (!requestedDesc) {
+              requestedDesc = `${matchedTemplate.total_days} Days (${matchedTemplate.name})`;
+            }
+          }
+        }
+
+        // C. Priority 3: Start Date and End Date range calculation if package duration wasn't found
+        if (!calculatedDays) {
+          const sDate = parseDateRobust(itinData.lead?.start_date);
+          const eDate = parseDateRobust(itinData.lead?.end_date);
+          if (sDate && eDate) {
+            const diffMs = eDate.getTime() - sDate.getTime();
+            const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+            if (daysDiff >= 1 && daysDiff <= 30) {
+              calculatedDays = daysDiff;
+              const nights = Math.max(1, daysDiff);
+              requestedDesc = `${daysDiff} Days (${sDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${eDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
+            }
+          }
+        }
+
+        // D. Priority 4: Date range inside travel_dates string
+        if (!calculatedDays && itinData.lead?.travel_dates) {
+          const rMatch = String(itinData.lead.travel_dates).match(/Travel Dates:\s*([0-9]{4}-[0-9]{2}-[0-9]{2})\s*to\s*([0-9]{4}-[0-9]{2}-[0-9]{2})/i);
+          if (rMatch) {
+            const s = parseDateRobust(rMatch[1]);
+            const e = parseDateRobust(rMatch[2]);
+            if (s && e) {
+              const diffMs = e.getTime() - s.getTime();
+              const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+              if (daysDiff >= 1 && daysDiff <= 30) {
+                calculatedDays = daysDiff;
+                requestedDesc = `${daysDiff} Days (${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
+              }
+            }
+          }
+        }
+
+        setTravelerDaysHint(calculatedDays || 0);
+        setRequestedDaysSummary(requestedDesc || (calculatedDays ? `${calculatedDays} Days` : ''));
+
+        // 4. Initialize or load the itinerary state
         if (itinData.itinerary) {
           setItineraryId(itinData.itinerary.id);
           setTitle(itinData.itinerary.title);
@@ -369,34 +500,44 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           } else {
             setPrice(itinData.itinerary.price ? String(itinData.itinerary.price) : '0.00');
           }
+
+          // In existing itinerary, auto-select template only if title matches
+          if (itinData.itinerary.title && loadedTemplates.length > 0) {
+            const matched = loadedTemplates.filter(t => 
+              itinData.itinerary.title.toLowerCase().includes(t.name.toLowerCase()) || 
+              t.name.toLowerCase().includes(itinData.itinerary.title.toLowerCase())
+            );
+            if (matched.length > 0) {
+              setSelectedMultiTemplateIds(matched.map(t => String(t.id)));
+            }
+          }
         } else {
-          // New itinerary defaults
-          setTitle(`Custom Travel Plan for ${itinData.lead?.client_name || 'Guest'}`);
-          setTotalDays(3); // default 3 days
-          initializeDays(3);
-        }
-
-        // 2. Fetch registries
-        const hotelsRes = await fetch('/api/admin/hotels');
-        const hotelsData = await hotelsRes.json();
-        setHotels(hotelsData.hotels || []);
-
-        const driversRes = await fetch('/api/admin/fleet');
-        const driversData = await driversRes.json();
-        setDrivers(driversData.fleet || []);
-
-        // 3. Fetch templates
-        const templatesRes = await fetch('/api/admin/templates');
-        const templatesData = await templatesRes.json();
-        const loadedTemplates = templatesData.templates || [];
-        setTemplates(loadedTemplates);
-
-        if (itinData.itinerary && itinData.itinerary.title && loadedTemplates.length > 0) {
-          const matchedIds = loadedTemplates
-            .filter(t => itinData.itinerary.title.toLowerCase().includes(t.region.toLowerCase()) || itinData.itinerary.title.toLowerCase().includes(t.name.toLowerCase()))
-            .map(t => String(t.id));
-          if (matchedIds.length > 0) {
-            setSelectedMultiTemplateIds(matchedIds);
+          // New itinerary defaults based on traveler request
+          if (matchedTemplate) {
+            setSelectedMultiTemplateIds([String(matchedTemplate.id)]);
+            setTitle(`${matchedTemplate.name} for ${itinData.lead?.client_name || 'Guest'}`);
+            setTotalDays(matchedTemplate.total_days);
+            
+            // Populate days with the blueprint template's activities & description
+            const tDays = typeof matchedTemplate.days === 'string' ? JSON.parse(matchedTemplate.days) : (matchedTemplate.days || []);
+            const populatedDays = tDays.map((d, idx) => ({
+              dayNumber: d.dayNumber || (idx + 1),
+              hotelId: '',
+              driverId: '',
+              description: d.description || '',
+              activities: d.activities || '',
+              perCarPrice: '',
+              dayPrice: ''
+            }));
+            setDays(populatedDays);
+          } else {
+            setSelectedMultiTemplateIds([]);
+            const finalDays = calculatedDays || 3;
+            setTitle(itinData.lead?.package_name 
+              ? `${itinData.lead.package_name} for ${itinData.lead.client_name}`
+              : `Custom Travel Plan for ${itinData.lead?.client_name || 'Guest'}`);
+            setTotalDays(finalDays);
+            initializeDays(finalDays);
           }
         }
 
@@ -1288,15 +1429,33 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   <div>
                     <label style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.8rem' }}>GUEST SIZE</label>
                     <strong>
-                      {lead?.num_travelers} travelers {lead?.children > 0 ? (() => {
-                        let ages = '';
-                        try {
-                          const parsed = typeof lead.child_ages === 'string' ? JSON.parse(lead.child_ages) : lead.child_ages;
-                          if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
-                        } catch (e) {}
-                        return `(${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Children${ages})`;
-                      })() : ''}
+                      {lead?.num_travelers} travelers {(() => {
+                        const elderlyCount = parseInt(lead?.num_elderly || lead?.elderly || 0, 10);
+                        const childCount = parseInt(lead?.children || lead?.num_children || 0, 10);
+                        const adultCount = parseInt(lead?.adults || lead?.num_adults || Math.max(1, (lead?.num_travelers || 1) - childCount - elderlyCount), 10);
+                        const parts = [`${adultCount} Adults`];
+                        if (childCount > 0) {
+                          let ages = '';
+                          try {
+                            const parsed = typeof lead?.child_ages === 'string' ? JSON.parse(lead?.child_ages) : lead?.child_ages;
+                            if (Array.isArray(parsed) && parsed.length > 0) ages = ` (Ages: ${parsed.join(', ')})`;
+                          } catch (e) {}
+                          parts.push(`${childCount} Children${ages}`);
+                        }
+                        if (elderlyCount > 0) parts.push(`${elderlyCount} Elderly / Seniors 60+ 🧓`);
+                        return `(${parts.join(', ')})`;
+                      })()}
                     </strong>
+                    {lead?.end_date && (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--accent-teal)', marginTop: '0.2rem' }}>
+                        📅 Scheduled: {formatToYmdString(lead.start_date)} to {formatToYmdString(lead.end_date)}
+                        {requestedDaysSummary && (
+                          <div style={{ color: '#38bdf8', fontWeight: 600, marginTop: '0.15rem' }}>
+                            ⏱️ Duration: {requestedDaysSummary}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Preferred Vehicle Requirements Snapshot */}
@@ -1641,7 +1800,31 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                   />
                 </div>
                 <div className="form-group">
-                  <label htmlFor="totalDays">Total Program Days</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.2rem' }}>
+                    <label htmlFor="totalDays" style={{ marginBottom: 0 }}>Total Program Days</label>
+                    {travelerDaysHint > 0 && travelerDaysHint !== totalDays && (
+                      <button
+                        type="button"
+                        onClick={() => handleDaysCountChange(travelerDaysHint)}
+                        style={{
+                          border: 'none',
+                          background: 'rgba(56, 189, 248, 0.15)',
+                          color: '#38bdf8',
+                          borderRadius: '4px',
+                          padding: '0.15rem 0.45rem',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.25rem'
+                        }}
+                        title={`Click to sync days count to traveler's requested ${travelerDaysHint} days`}
+                      >
+                        <i className="fa-solid fa-arrows-rotate"></i> Sync (${travelerDaysHint}D)
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="number"
                     id="totalDays"
@@ -1652,6 +1835,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                     onChange={(e) => handleDaysCountChange(e.target.value)}
                     required
                   />
+                  {requestedDaysSummary && (
+                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600 }}>
+                      <i className="fa-regular fa-calendar-days"></i> Traveler Request: {requestedDaysSummary}
+                    </span>
+                  )}
                 </div>
                 <div className="form-group">
                   <label htmlFor="price">
@@ -2093,6 +2281,7 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                                 <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
                                   <span style={{ position: 'absolute', left: '0.45rem', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>₹</span>
                                   <input
+                                    id={`day-rate-${day.dayNumber}`}
                                     type="number"
                                     min="1"
                                     step="0.01"

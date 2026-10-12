@@ -1,5 +1,6 @@
+import { PaymentModel } from '@/models/Payment';
 import { NextResponse } from 'next/server';
-import { getClient } from '@/lib/db';
+import { getClient, query } from '@/lib/db';
 import { getAdminSession, getSession } from '@/lib/auth';
 import { LeadModel } from '@/models/Lead';
 import { ItineraryModel } from '@/models/Itinerary';
@@ -22,6 +23,21 @@ export class LeadController {
 
       // Retrieve all leads joined with partner details
       const leads = await LeadModel.getAll();
+
+      // Retrieve all recorded payment history
+      try {
+        const paymentsRes = await query('SELECT * FROM lead_payments ORDER BY payment_date ASC, id ASC');
+        const pmtMap = {};
+        for (const p of (paymentsRes.rows || [])) {
+          if (!pmtMap[p.lead_id]) pmtMap[p.lead_id] = [];
+          pmtMap[p.lead_id].push(p);
+        }
+        for (const lead of leads) {
+          lead.payment_history = pmtMap[lead.id] || [];
+        }
+      } catch (pmtErr) {
+        console.error('Failed to load lead_payments in adminGetAllLeads:', pmtErr);
+      }
 
       return NextResponse.json({
         success: true,
@@ -48,7 +64,7 @@ export class LeadController {
         );
       }
 
-      const { leadId, clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, status, startDate, action, attendedBy, attendedByName, vehicleCategory, vehicleCount, vehiclePreferenceDetails } = await request.json();
+      const { leadId, clientName, clientPhone, travelDates, numTravelers, adults, children, numAdults, numChildren, numElderly, elderly, num_elderly, childAges, child_ages, status, startDate, endDate, end_date, action, attendedBy, attendedByName, vehicleCategory, vehicleCount, vehiclePreferenceDetails } = await request.json();
 
       if (!leadId) {
         return NextResponse.json(
@@ -132,10 +148,16 @@ export class LeadController {
         numTravelers,
         adults,
         children,
+        numAdults,
+        numChildren,
+        numElderly,
+        elderly,
+        num_elderly,
         childAges,
         child_ages,
         status,
         startDate,
+        endDate: endDate || end_date || null,
         vehicleCategory,
         vehicleCount,
         vehiclePreferenceDetails,
@@ -196,7 +218,7 @@ export class LeadController {
         );
       }
 
-      const { clientName, clientPhone, travelDates, numTravelers, adults, children, childAges, child_ages, startDate, templateId, templateIds, partnerId, source, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, vehiclePreferenceDetails, notes } = await request.json();
+      const { clientName, clientPhone, travelDates, numTravelers, adults, children, numAdults, numChildren, numElderly, elderly, num_elderly, childAges, child_ages, startDate, endDate, end_date, templateId, templateIds, partnerId, source, packageName, vehicleType, vehicleCategory = 'T', vehicleCount, vehiclePreferenceDetails, notes } = await request.json();
 
       if (!clientName || !clientPhone) {
         return NextResponse.json(
@@ -207,9 +229,10 @@ export class LeadController {
 
       await client.query('BEGIN');
 
-      const parsedAdults = adults !== undefined ? (parseInt(adults, 10) || 1) : 1;
-      const parsedChildren = children !== undefined ? (parseInt(children, 10) || 0) : 0;
-      const guestsCount = numTravelers ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren)) : (parsedAdults + parsedChildren);
+      const parsedAdults = parseInt(numAdults !== null && numAdults !== undefined ? numAdults : adults, 10) || 1;
+      const parsedChildren = parseInt(numChildren !== null && numChildren !== undefined ? numChildren : children, 10) || 0;
+      const parsedElderly = parseInt(numElderly || num_elderly || elderly, 10) || 0;
+      const guestsCount = numTravelers ? (parseInt(numTravelers, 10) || (parsedAdults + parsedChildren + parsedElderly)) : (parsedAdults + parsedChildren + parsedElderly);
       const targetTemplateIds = Array.isArray(templateIds) && templateIds.length > 0 
         ? templateIds 
         : (templateId ? [templateId] : []);
@@ -232,10 +255,15 @@ export class LeadController {
         numTravelers: guestsCount,
         adults: parsedAdults,
         children: parsedChildren,
+        numAdults: parsedAdults,
+        numChildren: parsedChildren,
+        numElderly: parsedElderly,
+        elderly: parsedElderly,
         childAges: childAges || [],
         child_ages: child_ages || null,
         status: initialStatus,
         startDate: startDate || null,
+        endDate: endDate || end_date || null,
         source: determinedSource,
         packageName,
         vehicleType: vehicleType || `${cat}-Series (${capacity}-Seater)`,
@@ -619,13 +647,31 @@ export class LeadController {
         paymentMethod,
         transactionRef,
         advanceVerifiedAt: new Date(),
-        advanceVerifiedBy: session.userId || session.adminId,
+        advanceVerifiedBy: parseInt(session.adminId || session.userId || 1, 10),
         ...(existingLead && !existingLead.attended_by ? {
-          attendedBy: session.adminId || session.userId,
+          attendedBy: parseInt(session.adminId || session.userId || 1, 10),
           attendedByName: session.name || 'Admin',
           attendedAt: new Date()
         } : {})
       });
+
+      // Record in Payment History ledger
+      try {
+        await PaymentModel.create({
+          leadId,
+          paymentType: 'advance',
+          title: '1. Initial Advance (Pre-Trip)',
+          amount: parseFloat(amount),
+          paymentMethod: paymentMethod || 'cash',
+          transactionRef: transactionRef || 'CASH_ADVANCE',
+          paymentDate: new Date(),
+          recordedBy: session.adminId || session.userId || 1,
+          recordedByName: session.name || 'Admin',
+          notes: 'Advance deposit collected before journey'
+        });
+      } catch (pmtErr) {
+        console.error('Failed to log payment ledger item:', pmtErr);
+      }
 
       return NextResponse.json({
         success: true,
@@ -698,6 +744,12 @@ export class LeadController {
           notes: existingLead.notes ? `${existingLead.notes}\n${revertAudit}` : revertAudit
         });
 
+        try {
+          await PaymentModel.deleteSettlements(leadId);
+        } catch (e) {
+          console.error('Failed to clear settlement payments on revert:', e);
+        }
+
         return NextResponse.json({
           success: true,
           message: 'Settlement status reverted back to pending balance.',
@@ -738,10 +790,10 @@ export class LeadController {
           ? parseFloat(discount)
           : Math.max(0, balanceBefore - parsedAmount);
 
-        finalSettlementAmount = parsedAmount;
+        finalSettlementAmount = prevSettlementPaid + parsedAmount;
         finalDiscount = calculatedDiscount;
         newPaymentStatus = 'settled';
-        auditDetail = `Partial Settlement Closed: ₹${parsedAmount.toLocaleString('en-IN')} received, ₹${calculatedDiscount.toLocaleString('en-IN')} uncollected/waived. Reason: ${reason.trim()}`;
+        auditDetail = `Partial Settlement Closed: ₹${parsedAmount.toLocaleString('en-IN')} received (Total Collected: ₹${(advancePaid + finalSettlementAmount).toLocaleString('en-IN')}), ₹${calculatedDiscount.toLocaleString('en-IN')} uncollected/waived. Reason: ${reason.trim()}`;
 
       } else if (settlementType === 'partial_pending') {
         // Customer pays an installment now, remainder is still pending due on departure/checkout
@@ -757,14 +809,15 @@ export class LeadController {
         finalDiscount = discount !== undefined && !isNaN(parseFloat(discount)) ? parseFloat(discount) : prevDiscount;
         const remainingBalance = Math.max(0, totalPrice - advancePaid - finalSettlementAmount - finalDiscount);
         newPaymentStatus = remainingBalance === 0 ? 'settled' : 'partially_settled';
-        auditDetail = `Partial Payment Received: ₹${parsedAmount.toLocaleString('en-IN')} (Remaining Balance: ₹${remainingBalance.toLocaleString('en-IN')}). Note: ${reason ? reason.trim() : 'Installment collected'}`;
+        auditDetail = `Mid-Trip Installment Received: ₹${parsedAmount.toLocaleString('en-IN')} (Total Collected So Far: ₹${(advancePaid + finalSettlementAmount).toLocaleString('en-IN')}, Remaining Due: ₹${remainingBalance.toLocaleString('en-IN')}). Note: ${reason ? reason.trim() : 'Installment collected'}`;
 
       } else {
-        // Full Settlement of entire pending balance
-        finalSettlementAmount = amount !== undefined && !isNaN(parseFloat(amount)) ? parseFloat(amount) : balanceBefore;
+        // Full Settlement of entire pending balance upon trip completion
+        const parsedAmount = amount !== undefined && !isNaN(parseFloat(amount)) ? parseFloat(amount) : balanceBefore;
+        finalSettlementAmount = prevSettlementPaid + parsedAmount;
         finalDiscount = 0;
         newPaymentStatus = 'settled';
-        auditDetail = `Full Settlement Received: ₹${finalSettlementAmount.toLocaleString('en-IN')}${reason ? `. Note: ${reason.trim()}` : ''}`;
+        auditDetail = `Final Settlement Received: ₹${parsedAmount.toLocaleString('en-IN')} (Total Trip Payments: ₹${(advancePaid + finalSettlementAmount).toLocaleString('en-IN')}, 100% Settled)${reason ? `. Note: ${reason.trim()}` : ''}`;
       }
 
       const settlementTimestamp = settlementDate ? new Date(settlementDate) : new Date();
@@ -782,6 +835,34 @@ export class LeadController {
         settledByName: session.name || 'Admin',
         notes: existingLead.notes ? `${existingLead.notes}\n${settlementAudit}` : settlementAudit
       });
+
+      // Record in Payment History ledger
+      try {
+        const pmtTitle = settlementType === 'partial_pending'
+          ? '2. Mid-Trip Installment'
+          : settlementType === 'partial_settled'
+          ? '3. Final Settlement (With Waiver / Discount)'
+          : '3. Final Balance Settlement (Post-Trip)';
+
+        const pmtNotes = settlementType === 'partial_settled'
+          ? `Settlement closed with ₹${finalDiscount} discount/waiver: ${reason || 'Agreed adjustment'}`
+          : (reason ? reason.trim() : (settlementType === 'full' ? 'Final balance cleared upon trip completion' : 'Installment collected during journey'));
+
+        await PaymentModel.create({
+          leadId,
+          paymentType: settlementType === 'partial_pending' ? 'installment' : 'settlement',
+          title: pmtTitle,
+          amount: parseFloat(amount) || balanceBefore,
+          paymentMethod: paymentMethod || 'cash',
+          transactionRef: transactionRef ? transactionRef.trim() : '',
+          paymentDate: settlementTimestamp,
+          recordedBy: session.adminId || session.userId || 1,
+          recordedByName: session.name || 'Admin',
+          notes: pmtNotes
+        });
+      } catch (pmtErr) {
+        console.error('Failed to log settlement payment ledger item:', pmtErr);
+      }
 
       return NextResponse.json({
         success: true,

@@ -85,6 +85,12 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
   const computedGst = Math.round(basePrice * (taxRate / 100) * 100) / 100;
   const computedTotal = Math.max(0, Math.round((basePrice + computedGst - (parseFloat(discount) || 0)) * 100) / 100);
 
+  const paymentHistory = invoice.paymentHistory || invoice.billing?.paymentHistory || [];
+  const totalPaidInHistory = paymentHistory.reduce((acc, p) => acc + (parseFloat(p.amount) || 0), 0);
+  const isFullySettled = (invoice.billing?.rawPaymentStatus === 'settled' || (invoice.billing?.paymentStatus?.includes('SETTLED') && !invoice.billing?.paymentStatus?.includes('PARTIALLY'))) || invoice.client?.status === 'completed';
+  const rawBalance = Math.max(0, Math.round((computedTotal - totalPaidInHistory - (parseFloat(invoice.billing?.settlementDiscount) || 0)) * 100) / 100);
+  const computedBalanceDue = isFullySettled ? 0 : rawBalance;
+
   const handlePrint = () => {
     window.print();
   };
@@ -104,7 +110,18 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
     if (discount > 0) {
       msg += `🏷️ *Discount:* ₹${parseFloat(discount).toLocaleString('en-IN')}\n`;
     }
-    msg += `✅ *Total Amount Paid:* ₹${computedTotal.toLocaleString('en-IN')}\n\n`;
+    msg += `💰 *Total Package Cost:* ₹${computedTotal.toLocaleString('en-IN')}\n`;
+    if (paymentHistory && paymentHistory.length > 0) {
+      msg += `\n💳 *Payment Receipts & Installments Credited:*\n`;
+      paymentHistory.forEach((p, i) => {
+        msg += `  ${i + 1}. ${p.title}: ₹${parseFloat(p.amount).toLocaleString('en-IN')} (${p.payment_method || 'Cash'}${p.transaction_ref ? ` - ${p.transaction_ref}` : ''})\n`;
+      });
+      msg += `✅ *Total Paid So Far:* ₹${totalPaidInHistory.toLocaleString('en-IN')}\n`;
+      msg += `${computedBalanceDue > 0 ? '⚠️ *Balance Outstanding:*' : '🎉 *Balance Due:*'} ₹${computedBalanceDue.toLocaleString('en-IN')}\n\n`;
+    } else {
+      msg += `✅ *Total Amount Paid:* ₹${(computedTotal - computedBalanceDue).toLocaleString('en-IN')}\n`;
+      msg += `⚠️ *Balance Due:* ₹${computedBalanceDue.toLocaleString('en-IN')}\n\n`;
+    }
     msg += `Thank you for choosing Sandesh Travels for your journey! 🚗 Wish you all the best.`;
 
     return `https://web.whatsapp.com/send?phone=${clientPhone}&text=${encodeURIComponent(msg)}`;
@@ -409,7 +426,101 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
           </div>
         </div>
 
-        {/* Financial Calculation Summary */}
+        {/* Verified Payment Receipts & Installment Ledger */}
+        <div style={{ marginBottom: '2.5rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: '700', margin: 0, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <i className="fa-solid fa-receipt" style={{ color: '#16a34a' }}></i> Verified Payment Receipts & Installment Ledger
+            </h3>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: '500' }}>
+              Official record of advance deposits and journey installments credited
+            </span>
+          </div>
+
+          <div style={{ overflowX: 'auto', borderRadius: '8px', border: '1px solid #cbd5e1' }}>
+            <table className="invoice-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <thead>
+                <tr style={{ background: '#f1f5f9', color: '#0f172a', textAlign: 'left', borderBottom: '2px solid #cbd5e1' }}>
+                  <th style={{ padding: '0.75rem 1rem', width: '50px', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>#</th>
+                  <th style={{ padding: '0.75rem 1rem', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date & Time</th>
+                  <th style={{ padding: '0.75rem 1rem', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Payment Milestone / Stage</th>
+                  <th style={{ padding: '0.75rem 1rem', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Mode</th>
+                  <th style={{ padding: '0.75rem 1rem', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Reference / UTR ID</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Amount Paid</th>
+                  <th style={{ padding: '0.75rem 1rem', textAlign: 'center', fontWeight: '700', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paymentHistory && paymentHistory.length > 0 ? (
+                  paymentHistory.map((pmt, idx) => {
+                    const pmtDate = pmt.payment_date ? new Date(pmt.payment_date) : null;
+                    const dateStr = pmtDate 
+                      ? pmtDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : 'Verified';
+                    const amountVal = parseFloat(pmt.amount) || 0;
+                    const isAdvance = pmt.payment_type === 'advance';
+                    const isInstallment = pmt.payment_type === 'installment';
+
+                    return (
+                      <tr key={pmt.id || idx} style={{ background: idx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: '700', color: '#64748b' }}>
+                          0{idx + 1}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#334155', fontWeight: '500' }}>
+                          {dateStr}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem' }}>
+                          <div style={{ fontWeight: '700', color: isAdvance ? '#15803d' : isInstallment ? '#b45309' : '#0369a1', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <i className={isAdvance ? 'fa-solid fa-circle-check' : isInstallment ? 'fa-solid fa-clock-rotate-left' : 'fa-solid fa-shield-check'} style={{ fontSize: '0.75rem' }}></i>
+                            {pmt.title || (isAdvance ? '1. Initial Advance (Pre-Trip)' : isInstallment ? '2. Mid-Trip Installment' : '3. Final Settlement')}
+                          </div>
+                          {pmt.notes && <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>{pmt.notes}</div>}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#334155' }}>
+                          <span style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', padding: '2px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: '600', textTransform: 'capitalize' }}>
+                            {(pmt.payment_method || 'Cash').replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', color: '#475569', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                          {pmt.transaction_ref || 'OFFLINE_VERIFIED'}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'right', fontWeight: '800', color: '#15803d', fontSize: '0.95rem' }}>
+                          ₹{amountVal.toLocaleString('en-IN')}
+                        </td>
+                        <td style={{ padding: '0.75rem 1rem', textAlign: 'center' }}>
+                          <span style={{ background: '#dcfce7', color: '#15803d', padding: '2px 8px', borderRadius: '12px', fontSize: '0.72rem', fontWeight: '700' }}>
+                            Received ✓
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan="7" style={{ padding: '1rem', textAlign: 'center', color: '#94a3b8', fontStyle: 'italic' }}>
+                      No payment ledger entries recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+              {paymentHistory && paymentHistory.length > 0 && (
+                <tfoot>
+                  <tr style={{ background: '#f8fafc', borderTop: '2px solid #cbd5e1', fontWeight: '700' }}>
+                    <td colSpan="5" style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#0f172a' }}>
+                      Total Payments Credited to Booking:
+                    </td>
+                    <td style={{ padding: '0.75rem 1rem', textAlign: 'right', color: '#15803d', fontSize: '1.05rem', fontWeight: '800' }}>
+                      ₹{totalPaidInHistory.toLocaleString('en-IN')}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+
+                {/* Financial Calculation Summary */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '2.5rem' }}>
           <div style={{
             width: '100%',
@@ -452,19 +563,29 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               <strong style={{ fontSize: '1.1rem', fontWeight: '800' }}>₹{computedTotal.toLocaleString('en-IN')}</strong>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#15803d' }}>
-              <span>10% Advance Paid {invoice.billing?.transactionRef ? `(UTR: ${invoice.billing.transactionRef})` : ''}:</span>
-              <strong>₹{(invoice.billing?.advancePaid || Math.round(computedTotal * 0.1)).toLocaleString('en-IN')}</strong>
-            </div>
-
-            {parseFloat(invoice.billing?.settlementAmount) > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#0369a1' }}>
-                <span>
-                  Settlement Received {invoice.billing?.settlementMethod ? `(${invoice.billing.settlementMethod.toUpperCase()})` : ''}
-                  {invoice.billing?.settlementRef ? ` (UTR: ${invoice.billing.settlementRef})` : ''}:
-                </span>
-                <strong>₹{parseFloat(invoice.billing.settlementAmount).toLocaleString('en-IN')}</strong>
-              </div>
+            {/* Itemized payment deductions */}
+            {paymentHistory && paymentHistory.length > 0 ? (
+              paymentHistory.map((pmt, idx) => (
+                <div key={pmt.id || idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.45rem', fontSize: '0.82rem', color: '#15803d' }}>
+                  <span>
+                    ✓ {pmt.title || `Installment #${idx + 1}`} ({pmt.payment_method ? pmt.payment_method.replace(/_/g, ' ') : 'Cash'}):
+                  </span>
+                  <strong>- ₹{(parseFloat(pmt.amount) || 0).toLocaleString('en-IN')}</strong>
+                </div>
+              ))
+            ) : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#15803d' }}>
+                  <span>Advance Paid:</span>
+                  <strong>- ₹{(parseFloat(invoice.billing?.advancePaid) || 0).toLocaleString('en-IN')}</strong>
+                </div>
+                {parseFloat(invoice.billing?.settlementAmount) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', color: '#0369a1' }}>
+                    <span>Settlement Received:</span>
+                    <strong>- ₹{parseFloat(invoice.billing?.settlementAmount).toLocaleString('en-IN')}</strong>
+                  </div>
+                )}
+              </>
             )}
 
             {parseFloat(invoice.billing?.settlementDiscount) > 0 && (
@@ -490,8 +611,8 @@ export default function InvoiceView({ leadId: propLeadId, params }) {
               <span style={{ fontWeight: '700' }}>
                 {invoice.billing?.balanceDue === 0 ? 'Remaining Balance:' : 'Balance Due on Arrival:'}
               </span>
-              <strong style={{ color: invoice.billing?.balanceDue === 0 ? '#34d399' : '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>
-                ₹{(invoice.billing?.balanceDue !== undefined ? invoice.billing.balanceDue : (invoice.client.status === 'completed' ? 0 : Math.max(0, computedTotal - (invoice.billing?.advancePaid || Math.round(computedTotal * 0.1))))).toLocaleString('en-IN')}
+              <strong style={{ color: computedBalanceDue === 0 ? '#34d399' : '#38bdf8', fontSize: '1.3rem', fontWeight: '800' }}>
+                ₹{computedBalanceDue.toLocaleString('en-IN')}
               </strong>
             </div>
           </div>

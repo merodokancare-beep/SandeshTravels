@@ -102,7 +102,15 @@ export default async function GuestItinerary({ params }) {
             <div>
               <h1 style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{itinerary.title}</h1>
               <p style={{ color: 'var(--text-secondary)' }}>
-                Prepared for <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> • {lead.num_travelers} Guest(s){lead.children > 0 ? ` (${lead.adults || (lead.num_travelers - lead.children)} Adults, ${lead.children} Child${lead.children > 1 ? 'ren' : ''})` : ''}
+                Prepared for <strong style={{ color: '#FFF' }}>{lead.client_name}</strong> • {lead.num_travelers} Guest(s){(() => {
+                  const elderlyCount = parseInt(lead.num_elderly || lead.elderly || 0, 10);
+                  const childCount = parseInt(lead.children || lead.num_children || 0, 10);
+                  const adultCount = parseInt(lead.adults || lead.num_adults || Math.max(1, (lead.num_travelers || 1) - childCount - elderlyCount), 10);
+                  const parts = [`${adultCount} Adult${adultCount > 1 ? 's' : ''}`];
+                  if (childCount > 0) parts.push(`${childCount} Child${childCount > 1 ? 'ren' : ''}`);
+                  if (elderlyCount > 0) parts.push(`${elderlyCount} Senior${elderlyCount > 1 ? 's' : ''} (60+ yrs)`);
+                  return ` (${parts.join(', ')})`;
+                })()}
               </p>
             </div>
             <div style={{ textAlign: 'right' }}>

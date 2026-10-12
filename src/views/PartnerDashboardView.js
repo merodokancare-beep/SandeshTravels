@@ -385,9 +385,37 @@ export default function PartnerDashboard() {
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{lead.client_phone}</div>
                         </td>
                         <td>
-                          <div>{lead.travel_dates || 'Not specified'}</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem' }}>
-                            <span>{lead.num_travelers} guest(s)</span>
+                          <div>
+                            {lead.start_date && lead.end_date ? (
+                              <span style={{ color: 'var(--accent-teal)', fontWeight: '600' }}>
+                                {String(lead.start_date).substring(0, 10)} to {String(lead.end_date).substring(0, 10)}
+                              </span>
+                            ) : (
+                              lead.travel_dates || 'Not specified'
+                            )}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.15rem', flexWrap: 'wrap' }}>
+                            <span>
+                              {lead.num_travelers} guest(s){(() => {
+                                const e = parseInt(lead.num_elderly || lead.elderly || 0, 10);
+                                const c = parseInt(lead.children || lead.num_children || 0, 10);
+                                const a = parseInt(lead.adults || lead.num_adults || Math.max(1, (lead.num_travelers || 1) - c - e), 10);
+                                return ` (${a}A${c > 0 ? `, ${c}C` : ''}${e > 0 ? `, ${e}S` : ''})`;
+                              })()}
+                            </span>
+                            {parseInt(lead.num_elderly || lead.elderly || 0, 10) > 0 && (
+                              <span style={{
+                                fontSize: '0.68rem',
+                                padding: '0.05rem 0.35rem',
+                                borderRadius: '3px',
+                                fontWeight: '700',
+                                background: 'rgba(234, 179, 8, 0.15)',
+                                color: '#facc15',
+                                border: '1px solid rgba(234, 179, 8, 0.35)'
+                              }}>
+                                🧓 Senior
+                              </span>
+                            )}
                             <span style={{
                               fontSize: '0.7rem',
                               padding: '0.05rem 0.35rem',

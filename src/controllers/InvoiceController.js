@@ -1,3 +1,4 @@
+import { PaymentModel } from '@/models/Payment';
 import { NextResponse } from 'next/server';
 import { getAdminSession } from '@/lib/auth';
 import { LeadModel } from '@/models/Lead';
@@ -44,6 +45,46 @@ export class InvoiceController {
       let partner = null;
       if (lead.partner_id) {
         partner = await PartnerModel.getById(lead.partner_id);
+      }
+
+      // Fetch payment ledger history
+      let paymentHistory = [];
+      try {
+        paymentHistory = await PaymentModel.getByLeadId(leadId);
+      } catch (e) {
+        console.error('Error fetching payment history for invoice:', e);
+      }
+
+      // If no payments logged yet in lead_payments table, synthesize from lead advance & settlement
+      if (!paymentHistory || paymentHistory.length === 0) {
+        const advAmount = parseFloat(lead.advance_paid) || 0;
+        const setAmount = parseFloat(lead.settlement_amount) || 0;
+        if (advAmount > 0) {
+          paymentHistory.push({
+            id: 'legacy-adv',
+            lead_id: lead.id,
+            payment_type: 'advance',
+            title: '1. Initial Advance (Pre-Trip)',
+            amount: advAmount,
+            payment_method: lead.payment_method || 'cash',
+            transaction_ref: lead.transaction_ref || 'ADV_RECEIPT',
+            payment_date: lead.advance_verified_at || lead.created_at,
+            notes: 'Advance deposit collected'
+          });
+        }
+        if (setAmount > 0) {
+          paymentHistory.push({
+            id: 'legacy-settle',
+            lead_id: lead.id,
+            payment_type: lead.payment_status === 'settled' ? 'settlement' : 'installment',
+            title: lead.payment_status === 'settled' ? 'Final Payment Settlement' : '2. Mid-Trip Installment',
+            amount: setAmount,
+            payment_method: lead.settlement_method || 'cash',
+            transaction_ref: lead.settlement_ref || 'TXN_REF',
+            payment_date: lead.settled_at || new Date(),
+            notes: lead.settlement_reason || 'Installment collected'
+          });
+        }
       }
 
       // Format Dates
@@ -116,7 +157,9 @@ export class InvoiceController {
             hotelName: partner.hotel_name,
             commissionRate: partner.commission_rate
           } : null,
+          paymentHistory,
           billing: {
+            paymentHistory,
             basePrice,
             gstRate: 5,
             gstAmount,

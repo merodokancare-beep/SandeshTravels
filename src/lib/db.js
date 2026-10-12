@@ -142,6 +142,25 @@ export async function initDb() {
       );
     `);
 
+    // 8. Lead Payments History & Receipts Ledger
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS lead_payments (
+        id SERIAL PRIMARY KEY,
+        lead_id INT NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+        payment_type VARCHAR(50) NOT NULL,
+        title VARCHAR(150) NOT NULL,
+        amount NUMERIC(10,2) NOT NULL,
+        payment_method VARCHAR(50) DEFAULT 'cash',
+        transaction_ref VARCHAR(100),
+        payment_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        recorded_by INT,
+        recorded_by_name VARCHAR(100),
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_lead_payments_lead_id ON lead_payments(lead_id);
+    `);
+
     // 7. Active Stays (Tracking checking in and out stages)
     await client.query(`
       CREATE TABLE IF NOT EXISTS active_stays (
@@ -188,6 +207,12 @@ export async function initDb() {
       ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP,
       ADD COLUMN IF NOT EXISTS settled_by INT REFERENCES admins(id) ON DELETE SET NULL,
       ADD COLUMN IF NOT EXISTS settled_by_name VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS end_date TEXT,
+      ADD COLUMN IF NOT EXISTS elderly INT DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS num_elderly INT DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS num_adults INT DEFAULT 1,
+      ADD COLUMN IF NOT EXISTS num_children INT DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS children_ages TEXT,
       ALTER COLUMN travel_dates TYPE TEXT,
       ALTER COLUMN client_phone TYPE VARCHAR(100),
       ALTER COLUMN client_name TYPE VARCHAR(255);
