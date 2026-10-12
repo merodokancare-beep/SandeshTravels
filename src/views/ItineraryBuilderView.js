@@ -442,10 +442,11 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
           const eDate = parseDateRobust(itinData.lead?.end_date);
           if (sDate && eDate) {
             const diffMs = eDate.getTime() - sDate.getTime();
-            const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+            // Dates are inclusive (e.g. 14th to 17th is 4 calendar tour days)
+            const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
             if (daysDiff >= 1 && daysDiff <= 30) {
               calculatedDays = daysDiff;
-              const nights = Math.max(1, daysDiff);
+              const nights = Math.max(0, daysDiff - 1);
               requestedDesc = `${daysDiff} Days (${sDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${eDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
             }
           }
@@ -459,7 +460,8 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
             const e = parseDateRobust(rMatch[2]);
             if (s && e) {
               const diffMs = e.getTime() - s.getTime();
-              const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+              // Dates are inclusive (e.g. 14th to 17th is 4 calendar tour days)
+              const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
               if (daysDiff >= 1 && daysDiff <= 30) {
                 calculatedDays = daysDiff;
                 requestedDesc = `${daysDiff} Days (${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} to ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })})`;
@@ -1836,8 +1838,27 @@ export default function ItineraryBuilder({ params, leadId: propLeadId }) {
                     required
                   />
                   {requestedDaysSummary && (
-                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.3rem', fontWeight: 600 }}>
-                      <i className="fa-regular fa-calendar-days"></i> Traveler Request: {requestedDaysSummary}
+                    <span style={{ fontSize: '0.72rem', color: 'var(--accent-teal)', marginTop: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 600, flexWrap: 'wrap' }}>
+                      <span><i className="fa-regular fa-calendar-days"></i> Traveler Request: {requestedDaysSummary}</span>
+                      {travelerDaysHint > 0 && totalDays !== travelerDaysHint && (
+                        <button
+                          type="button"
+                          onClick={() => handleDaysCountChange(travelerDaysHint)}
+                          style={{
+                            background: 'rgba(56, 189, 248, 0.15)',
+                            border: '1px solid #38bdf8',
+                            color: '#38bdf8',
+                            borderRadius: '4px',
+                            padding: '1px 6px',
+                            fontSize: '0.68rem',
+                            cursor: 'pointer',
+                            fontWeight: 700
+                          }}
+                          title={`Sync program to ${travelerDaysHint} days`}
+                        >
+                          Sync to {travelerDaysHint} Days
+                        </button>
+                      )}
                     </span>
                   )}
                 </div>
